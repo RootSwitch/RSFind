@@ -168,9 +168,34 @@ namespace RSFind
             _files.Clear();
             _collapsed.Clear();
             _rows.Clear();
-            VirtualListSize = 0;
+            SetRowCount(0);
             FitColumn();
             Invalidate();
+        }
+
+        void SetRowCount(int count)
+        {
+            int previous = VirtualListSize;
+            // Read the offset while the old rows still exist. After the count
+            // drops, the control reports a nonsense value - a negative top
+            // index - and can no longer act on a scroll request.
+            int top = TopIndex();
+            bool home = ViewRules.NeedsScrollHome(top, count);
+            if (home && previous > 0) EnsureVisible(0);
+
+            VirtualListSize = count;
+
+            // Collapsing a group shrinks the list without invalidating the
+            // reader's place, so the view is only pulled home when the place
+            // no longer exists.
+            if (home && count > 0) EnsureVisible(0);
+        }
+
+        int TopIndex()
+        {
+            if (!IsHandleCreated) return 0;
+            return (int)Native.SendMessage(Handle, Native.LVM_GETTOPINDEX,
+                                           IntPtr.Zero, IntPtr.Zero);
         }
 
         // Appends a batch. Batching is the caller's job because the engine
@@ -229,7 +254,7 @@ namespace RSFind
             // under them, and leaving them behind makes the control ask for
             // rows that no longer exist.
             SelectedIndices.Clear();
-            VirtualListSize = _rows.Count;
+            SetRowCount(_rows.Count);
             // The row count is what makes the vertical scrollbar appear, and
             // its arrival takes 17px out of the client area without raising a
             // resize. Without re-fitting here the column stays at the old

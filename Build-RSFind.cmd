@@ -18,7 +18,8 @@ rem Nothing here is restored, vendored, or downloaded.
     "%~dp0Themes.cs" "%~dp0Native.cs" "%~dp0Controls.cs" ^
     "%~dp0Matching.cs" "%~dp0TextFiles.cs" "%~dp0OfficeText.cs" ^
     "%~dp0Replacer.cs" "%~dp0FindEngine.cs" ^
-    "%~dp0Settings.cs" "%~dp0ResultsView.cs" "%~dp0ReplaceDialog.cs" "%~dp0RSFind.cs"
+    "%~dp0ViewRules.cs" "%~dp0Settings.cs" "%~dp0ResultsView.cs" ^
+    "%~dp0ReplaceDialog.cs" "%~dp0RSFind.cs"
 if errorlevel 1 (
     echo Build FAILED.
     exit /b 1

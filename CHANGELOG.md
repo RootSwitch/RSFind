@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+**A second search after scrolling through the first one rendered a blank
+pane.** Reported from real use: search `smartctl` across a folder of session
+logs, scroll down to read the results, then search for a drive serial. The
+status line said it had found matches and the pane showed nothing.
+
+A native ListView does not clamp its scroll offset when the item count shrinks
+under it. Going from 960 rows to 16 while parked at row 381 left the viewport
+past the last row, and the control then reported its top index as **-381**. The
+part that made it look broken rather than merely odd is that a short result set
+has no scrollbar, so there was no way to scroll back into range - the results
+were unreachable, and the count in the status line read as the tool lying about
+having found something. A longer follow-up search grew a scrollbar, and
+dragging it snapped the view back, which is why it looked like a repaint
+problem.
+
+The fix reads the scroll offset **before** the row count changes, while the
+control is still in a state it can act on, and pulls the view home only when
+the offset would end up past the end. Growing is left alone, so results
+streaming in during a scan do not yank the view away from someone reading them,
+and collapsing a group above the fold keeps their place.
+
+The rule lives in `ViewRules.cs` as a pure function so it is tested rather than
+only reproducible by driving a window. Writing the planted defect for it showed
+that the explicit "if the list grew, do nothing" guard was dead code - a valid
+top index is always below the count, so growth cannot trigger the rule. The
+guard was removed rather than kept with an untestable plant beside it.
+
 **Replace, behind a preview that cannot be skipped.** There is no command-line
 replace, no "replace all" that bypasses the window, and no path to the write
 code except by reading what it would do first. Eyeballing the results before

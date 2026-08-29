@@ -42,6 +42,11 @@ namespace RSFind
 
         public const int WM_THEMECHANGED = 0x031A;
 
+        // The scroll position of a virtual ListView, which WinForms does not
+        // surface: TopItem throws in virtual mode.
+        public const int LVM_FIRST = 0x1000;
+        public const int LVM_GETTOPINDEX = LVM_FIRST + 39;
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 

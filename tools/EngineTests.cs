@@ -52,6 +52,7 @@ namespace RSFind
                 AnsiTests();
                 WorkbookTests();
                 DocumentTests();
+                ScrollTests();
                 CaseTests();
                 EngineTests_EndToEnd(root);
                 OfficeEndToEnd(root);
@@ -673,6 +674,43 @@ namespace RSFind
                "an extracted workbook refuses to be rewritten");
 
             Directory.Delete(dir, true);
+        }
+
+        // ---- the results pane's scroll rule ------------------------------------
+
+        static void ScrollTests()
+        {
+            // The reported bug: a long search, scrolled down to read, then a
+            // short one. The viewport ends up past the last row and the pane
+            // renders blank - with too few rows to grow a scrollbar, so there
+            // is no way to scroll back and the results are simply invisible.
+            Ok(ViewRules.NeedsScrollHome(381, 16),
+               "a short result set after a scrolled long one pulls the view home");
+            Ok(ViewRules.NeedsScrollHome(10, 0),
+               "clearing the list pulls the view home");
+
+            // Never scrolled, so there is nothing to correct.
+            Ok(!ViewRules.NeedsScrollHome(0, 16),
+               "a list already at the top is left alone");
+
+            // Growing is the streaming case. Yanking the view to the top on
+            // every batch would fight someone reading what has arrived, and it
+            // never happens because a valid top index is below the count.
+            Ok(!ViewRules.NeedsScrollHome(0, 100), "an empty list filling up is left alone");
+            Ok(!ViewRules.NeedsScrollHome(50, 200),
+               "a scrolled list that grows keeps the reader's place");
+
+            // Collapsing one group shrinks the list without invalidating where
+            // the reader was.
+            Ok(!ViewRules.NeedsScrollHome(5, 940),
+               "collapsing a group above the fold keeps the reader's place");
+            Ok(ViewRules.NeedsScrollHome(950, 940),
+               "collapsing enough to pass the reader's place pulls the view home");
+
+            // The boundary: a top index equal to the new count is one row past
+            // the end, because indexes are zero-based.
+            Ok(ViewRules.NeedsScrollHome(16, 16), "a top index of exactly the count is past the end");
+            Ok(!ViewRules.NeedsScrollHome(15, 16), "the last valid index is not past the end");
         }
 
         // ---- case preservation -------------------------------------------------

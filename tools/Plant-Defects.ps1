@@ -184,7 +184,18 @@ $plants = @(
        from = 'if (!string.Equals(stripped, text, StringComparison.Ordinal))'
        to   = 'if (true)'
        want = 'strip-ANSI does not make a file without escapes unreplaceable'
-       why  = 'marking every file transformed makes Replace refuse everything by default' }
+       why  = 'marking every file transformed makes Replace refuse everything by default' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'return topIndex >= newCount;'
+       to   = 'return false;'
+       want = 'a short result set after a scrolled long one pulls the view home'
+       why  = 'a viewport left past the end renders blank with no scrollbar to get back' }
+
+    # There is no plant for "a list that grows is left alone". The obvious
+    # guard for it was written, planted, and shown to be dead code: a valid top
+    # index is always below the count, so growth cannot trigger the rule. The
+    # guard was removed rather than kept with an untestable plant beside it.
 )
 
 $work = Join-Path $root 'testdata\plant'
@@ -196,7 +207,7 @@ foreach ($plant in $plants) {
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }
     New-Item -ItemType Directory -Force -Path $work | Out-Null
 
-    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'FindEngine.cs') {
+    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'ViewRules.cs', 'FindEngine.cs') {
         Copy-Item (Join-Path $root $name) (Join-Path $work $name)
     }
     Copy-Item (Join-Path $root 'tools\EngineTests.cs') (Join-Path $work 'EngineTests.cs')
@@ -222,7 +233,7 @@ foreach ($plant in $plants) {
     # exists to observe - a defect being caught would look like a script crash.
     $log = Join-Path $work 'out.txt'
     $exe = Join-Path $work 'Planted.exe'
-    $sources = @('Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'FindEngine.cs', 'EngineTests.cs') |
+    $sources = @('Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'ViewRules.cs', 'FindEngine.cs', 'EngineTests.cs') |
                ForEach-Object { '"' + (Join-Path $work $_) + '"' }
     cmd /c ('"' + $csc + '" /nologo /target:exe /r:System.Xml.dll ' +
             '/r:System.IO.Compression.dll /out:"' + $exe + '" ' +
