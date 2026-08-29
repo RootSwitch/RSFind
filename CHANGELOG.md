@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+**Hero and social preview images, composed as HTML.** `docs/src/hero.html` and
+`docs/src/social.html` are rendered to PNG by `tools/Render-Png.ps1` using the
+headless Chrome or Edge already on the machine. The layout is text, so a
+caption typo is a one-line fix and a re-render rather than an image edit -
+which is the point, because an image cannot be grepped or corrected once links
+to it are cached. The renderer fails rather than writing a cropped file if the
+page overflows its frame.
+
+The four hero panels are real captures rather than mock-ups, and each shows a
+different thing the tool does on a different palette instead of the same window
+in four colors.
+
+**charcheck now scans `.html`.** The hero and social captions are the most
+expensive text in the project to get wrong, for the same reason.
+
+**The sample estate is fictional throughout.** Hosts are `LAB1` to `LAB6` on
+the RFC 5737 documentation range, in the fixtures, the comments, the README,
+and every screenshot. No real hostname or address appears in a tracked file.
+
 **The replace button is called Replace... rather than Preview, and sits under
 Find.** Reported from a full run through the tool: someone who has just typed a
 replacement goes looking for the verb they are about to perform, and a button

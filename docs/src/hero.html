@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Source for docs/hero-quadrants.png. Rendered by:
+       powershell -File tools\Render-Png.ps1 -Html docs\src\hero.html `
+           -Out docs\hero-quadrants.png -Width 2000 -Height 1444
+     Composed as HTML rather than drawn, so a caption typo is a one-line fix and
+     a re-render instead of an image edit. Colors are the Classic palette.
+     Panel screenshots are real captures, kept in docs/src/panels, and each one
+     shows a different thing the tool does rather than the same window in four
+     colors. The hosts and addresses in them are invented: LAB1 to LAB6 on the
+     RFC 5737 documentation range. -->
+<style>
+  html, body {
+    margin: 0;
+    width: 2000px;
+    height: 1444px;
+    overflow: hidden;
+    background: #1b1e25;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  .grid {
+    box-sizing: border-box;
+    width: 2000px;
+    height: 1444px;
+    padding: 56px;
+    display: grid;
+    grid-template-columns: 900px 900px;
+    grid-template-rows: 638px 638px;
+    column-gap: 88px;
+    row-gap: 56px;
+  }
+  .cell { display: flex; flex-direction: column; }
+  /* cover rather than contain: the replace preview is a slightly different
+     shape from the main window, and a letterboxed panel in a grid of four
+     reads as a mistake. */
+  .cell img {
+    width: 900px;
+    height: 584px;
+    display: block;
+    border-radius: 8px;
+    object-fit: cover;
+    object-position: top left;
+  }
+  .cap {
+    height: 40px;
+    line-height: 40px;
+    margin-top: 14px;
+    font-size: 26px;
+    color: #9aa3b2;
+    white-space: nowrap;
+  }
+  .cap b { color: #e6e9ef; font-weight: 600; }
+  .cap .theme { color: #4c8bf5; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="cell">
+      <img src="panels/1-classic.png" alt="">
+      <div class="cap"><b>Every matching line, grouped by file.</b> <span class="theme">Classic</span></div>
+    </div>
+    <div class="cell">
+      <img src="panels/2-nocturne.png" alt="">
+      <div class="cap"><b>Ctrl+F narrows a thousand hits to one host.</b> <span class="theme">Nocturne</span></div>
+    </div>
+    <div class="cell">
+      <img src="panels/3-canvas.png" alt="">
+      <div class="cap"><b>Nothing is written without a preview.</b> <span class="theme">Canvas</span></div>
+    </div>
+    <div class="cell">
+      <img src="panels/4-phosphor.png" alt="">
+      <div class="cap"><b>Reads inside spreadsheets and documents.</b> <span class="theme">Phosphor</span></div>
+    </div>
+  </div>
+</body>
+</html>

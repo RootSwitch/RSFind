@@ -109,3 +109,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 That copies the tree, plants twenty-nine defects into the copies one at a time,
 and verifies that each is caught by the check that owns it. It never modifies
 the working files.
+
+## Re-rendering the images
+
+`docs/hero-quadrants.png` and `docs/social-preview.png` are composed as HTML in
+`docs/src/`, not drawn. The layout is text, so a caption typo is a one-line fix
+and a re-render rather than an image edit - which matters because an image
+cannot be grepped or corrected once links to it are cached.
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Render-Png.ps1 -Html docs\src\hero.html -Out docs\hero-quadrants.png -Width 2000 -Height 1444
+```
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Render-Png.ps1 -Html docs\src\social.html -Out docs\social-preview.png -Width 1280 -Height 640
+```
+
+It renders with the headless Chrome or Edge already on the machine, and fails
+rather than publishing a cropped image if the page overflows its frame.
+
+The four panels under `docs/src/panels/` are real captures, not mock-ups. The
+hosts and addresses in them are invented - `LAB1` to `LAB6` on the RFC 5737
+documentation range - and that is a rule, not a convenience: no real hostname
+or address belongs in a tracked file, screenshots included.
+
+**The social preview has to be uploaded through GitHub's repository settings.**
+Committing the file only versions it; it does not become the card. That upload
+is only possible once the repository is public.

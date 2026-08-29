@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Source for docs/social-preview.png, GitHub's 1280x640 card. Rendered by:
+       powershell -File tools\Render-Png.ps1 -Html docs\src\social.html `
+           -Out docs\social-preview.png -Width 1280 -Height 640
+     Type sizes are set for the small card GitHub actually renders, not for
+     viewing the PNG at full size. Colors are the Classic palette. The mark is
+     the same drawing as favicon.svg; change both together. -->
+<style>
+  html, body {
+    margin: 0;
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+    background: #1b1e25;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #e6e9ef;
+  }
+  .card { display: flex; width: 1280px; height: 640px; }
+
+  .left {
+    box-sizing: border-box;
+    width: 660px;
+    padding: 74px 0 74px 76px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .brand { display: flex; align-items: center; gap: 22px; margin-bottom: 26px; }
+  .brand svg { width: 76px; height: 76px; display: block; }
+  .name { font-size: 68px; font-weight: 600; letter-spacing: 0.5px; }
+  .tag { font-size: 30px; line-height: 1.34; color: #e6e9ef; margin-bottom: 30px; }
+  .tag .hl { color: #4c8bf5; font-weight: 600; }
+  ul { margin: 0; padding: 0; list-style: none; }
+  li {
+    font-size: 22px;
+    line-height: 1.72;
+    color: #9aa3b2;
+    padding-left: 30px;
+    position: relative;
+  }
+  li::before {
+    content: "";
+    position: absolute;
+    left: 4px; top: 15px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: #2e9b57;
+  }
+
+  .right { position: relative; width: 620px; height: 640px; overflow: hidden; }
+  /* A real capture, cropped rather than mocked up, and wide enough to bleed off
+     the card edge instead of floating in the middle. */
+  .shot {
+    position: absolute;
+    top: 73px; left: 36px;
+    width: 760px; height: 493px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+  }
+  .shot img { width: 760px; height: 493px; display: block; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="left">
+      <div class="brand">
+        <!-- A magnifier over lines of text. The lens is filled with the ground
+             color before its rim is stroked, so the rules stop at its edge. -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+          <rect width="64" height="64" rx="12" fill="#262a33"/>
+          <g stroke="#2e9b57" stroke-width="4" stroke-linecap="round">
+            <line x1="12" y1="16" x2="46" y2="16"/>
+            <line x1="12" y1="28" x2="38" y2="28"/>
+            <line x1="12" y1="40" x2="30" y2="40"/>
+          </g>
+          <circle cx="39" cy="37" r="13" fill="#262a33"/>
+          <g stroke="#4c8bf5" stroke-width="4.5" fill="none" stroke-linecap="round">
+            <circle cx="39" cy="37" r="13"/>
+            <line x1="48" y1="46" x2="56" y2="54"/>
+          </g>
+        </svg>
+        <div class="name">RSFind</div>
+      </div>
+      <!-- The break is explicit so the highlighted phrase never splits across
+           two lines, which is what auto-wrapping did at this width. -->
+      <div class="tag">
+        Searches the text <span class="hl">inside</span> the files<br>
+        in a folder, on demand.
+      </div>
+      <ul>
+        <li>No index, no service, nothing left running</li>
+        <li>Reads .xlsx and .docx without Office installed</li>
+        <li>Replace only behind a preview you have read</li>
+      </ul>
+    </div>
+    <div class="right">
+      <div class="shot"><img src="panels/1-classic.png" alt=""></div>
+    </div>
+  </div>
+</body>
+</html>

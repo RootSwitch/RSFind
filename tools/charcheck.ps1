@@ -29,7 +29,11 @@ $britishPattern = 'colour|behaviour|neighbour|centre|favourite|licence|defence|'
                   '\bgrey\b|(?:organi|recogni|initiali|normali|optimi|customi|' +
                   'visuali|minimi|maximi|apologi|analy)se[sd]?\b'
 
-$extensions = '*.cs', '*.ps1', '*.cmd', '*.md', '*.txt', '*.json', '*.yml'
+# .html is in the list because docs/src holds the sources for the hero and the
+# social preview. Their captions are the most expensive text in the project to
+# get wrong: an image cannot be grepped or corrected cheaply once links to it
+# are cached, which is the whole reason section 11 of the conventions exists.
+$extensions = '*.cs', '*.ps1', '*.cmd', '*.md', '*.txt', '*.json', '*.yml', '*.html'
 # testdata is scratch written by the test run and by demo corpora, and it is
 # gitignored. Scanning it means a fixture full of deliberate British spellings
 # fails the check for the project's own prose.

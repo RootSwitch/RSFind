@@ -8,7 +8,9 @@ It builds no index, installs no service, and watches nothing in the
 background. That is the point: it is the tool you reach for on the day
 Windows Search returns filenames and nothing else.
 
-![RSFind searching a folder of terminal session logs](docs/screenshot.png)
+![Four RSFind windows: results grouped by file on Classic, the Ctrl+F filter
+narrowing them on Nocturne, the replace preview on Canvas, and spreadsheet and
+document hits on Phosphor](docs/hero-quadrants.png)
 
 ## What it does
 
