@@ -6,10 +6,41 @@
 //
 // C# 5 only (in-box csc).
 
+using System;
+
 namespace RSFind
 {
     public static class ViewRules
     {
+        static bool Contains(string haystack, string needle)
+        {
+            if (string.IsNullOrEmpty(needle)) return true;
+            if (haystack == null) return false;
+            return haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // A file whose PATH matches the filter keeps every one of its hits.
+        //
+        // This is the case the filter exists for. Narrowing a thousand hits to
+        // "the ones from LAB4" is a question about which FILE, and the host is
+        // in the filename rather than in any of the matched lines - so keeping
+        // only the lines that happen to contain "LAB4" would answer with
+        // almost nothing and look like the filter was broken.
+        public static bool FileKeepsEverything(string filter, string relativePath)
+        {
+            return string.IsNullOrEmpty(filter) || Contains(relativePath, filter);
+        }
+
+        // Otherwise a hit is kept on its own merits, matched against the line
+        // and against the location label a workbook cell carries instead of a
+        // line number.
+        public static bool HitIsShown(string filter, string relativePath,
+                                      string lineText, string location)
+        {
+            if (FileKeepsEverything(filter, relativePath)) return true;
+            return Contains(lineText, filter) || Contains(location, filter);
+        }
+
         // True when a list's scroll position is about to be left pointing past
         // the end of its data.
         //

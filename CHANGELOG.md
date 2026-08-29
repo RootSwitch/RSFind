@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+**Ctrl+F narrows the results.** A search across a folder of session logs
+answers with a thousand hits, and the next question is which of them came from
+one host. That is a question about the results, not a reason to search the disk
+again. The bar filters rather than stepping match to match: a host appears on
+dozens of rows, so find-next would mean pressing it dozens of times where a
+filter answers in one go and leaves a short list to double-click. Escape
+restores everything, and a new search clears it - a filter left over from a
+previous result set would hide the new one, which is the same trap as a stale
+scroll position.
+
+A filter matching a **filename** keeps that file's hits whole, because the host
+is in the name and not in any of the matched lines; keeping only the lines that
+happen to contain it would answer with almost nothing and look broken. A filter
+matching a **line** keeps that hit on its own.
+
+**Copy All Results, on the results right-click menu.** Pasting a whole result
+set into a second file and reading it there is a normal way to work through
+one. It copies everything the filter admits regardless of whether a group is
+collapsed: a filter is a statement about which results are wanted, while
+collapsing is a way to get a long list out of the way while reading.
+
+**Double-clicking a file header opens the file**, at its first match rather
+than at line 1 - someone double-clicking the header of a log that matched on
+line 1402 wants to be at line 1402, not at the top of a session transcript.
+Collapsing moved to the indent left of the filename, which is also what made
+the double-click possible: while a click anywhere on the header toggled the
+group, the two clicks arrived first and cancelled each other out. The indent
+width is now one number shared by the drawing and the hit test, so a strip
+that looks like the arrow but does not toggle cannot appear.
+
+**The planted-defect harness gives each plant its own directory.** Reusing one
+folder meant deleting the previous `Planted.exe` every iteration, and Windows
+does not always release an executable the moment its process exits - a lingering
+handle turned that delete into an access-denied that aborted the run halfway
+through and reported it as a permissions error rather than as anything to do
+with the plants.
+
 **A second search after scrolling through the first one rendered a blank
 pane.** Reported from real use: search `smartctl` across a folder of session
 logs, scroll down to read the results, then search for a drive serial. The

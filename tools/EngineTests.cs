@@ -53,6 +53,7 @@ namespace RSFind
                 WorkbookTests();
                 DocumentTests();
                 ScrollTests();
+                FilterTests();
                 CaseTests();
                 EngineTests_EndToEnd(root);
                 OfficeEndToEnd(root);
@@ -711,6 +712,48 @@ namespace RSFind
             // the end, because indexes are zero-based.
             Ok(ViewRules.NeedsScrollHome(16, 16), "a top index of exactly the count is past the end");
             Ok(!ViewRules.NeedsScrollHome(15, 16), "the last valid index is not past the end");
+        }
+
+        // ---- the results filter ---------------------------------------------------
+
+        static void FilterTests()
+        {
+            const string Log = "[ssh 192.0.2.14] (2026-08-24_170524) LAB4.log";
+            const string Line = "root@LAB4:~# smartctl -a /dev/nvme0";
+            const string Other = "[ssh 192.0.2.11] (2026-08-21_170521) LAB2.log";
+
+            // No filter admits everything, which is the state the pane spends
+            // most of its life in.
+            Ok(ViewRules.FileKeepsEverything("", Log), "an empty filter keeps every file");
+            Ok(ViewRules.HitIsShown("", Other, "anything", null), "an empty filter keeps every hit");
+
+            // The case this exists for: the host is in the filename, not in
+            // the matched lines, so matching the name has to keep the file
+            // whole. Keeping only lines containing LAB4 would answer with
+            // almost nothing and look broken.
+            Ok(ViewRules.FileKeepsEverything("LAB4", Log), "a filter matching the filename keeps the file");
+            Ok(ViewRules.HitIsShown("LAB4", Log, "a line with no host in it", null),
+               "every hit in a matching file is kept, whatever the line says");
+            Ok(!ViewRules.FileKeepsEverything("LAB4", Other), "a file whose name does not match is not kept whole");
+
+            // A hit still earns its own place.
+            Ok(ViewRules.HitIsShown("smartctl", Other, Line, null), "a hit matching the line is kept");
+            Ok(!ViewRules.HitIsShown("nvme9", Other, Line, null), "a hit matching nothing is dropped");
+
+            // Filtering by a spreadsheet cell reference, which is what a
+            // workbook hit carries instead of a line number.
+            Ok(ViewRules.HitIsShown("Schedule", Other, "decommission", "Schedule!A2"),
+               "a hit matching its location label is kept");
+
+            Ok(ViewRules.FileKeepsEverything("lab4", Log), "the filter is case-insensitive on names");
+            Ok(ViewRules.HitIsShown("SMARTCTL", Other, Line, null), "the filter is case-insensitive on lines");
+
+            // An IP or a timestamp out of the filename is as likely a way in
+            // as the host is.
+            Ok(ViewRules.FileKeepsEverything("192.0.2.14", Log), "filtering by address works");
+            Ok(ViewRules.FileKeepsEverything("170524", Log), "filtering by the session timestamp works");
+
+            Ok(!ViewRules.HitIsShown("LAB4", Other, null, null), "a null line does not match");
         }
 
         // ---- case preservation -------------------------------------------------

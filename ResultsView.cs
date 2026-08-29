@@ -48,12 +48,23 @@ namespace RSFind
         readonly List<bool> _collapsed = new List<bool>();
         readonly List<Row> _rows = new List<Row>();
 
+        // Narrows what the pane shows without touching what was found. The
+        // case it exists for: a search across a hundred session logs returns a
+        // thousand hits, and the next question is "which of these was on
+        // LAB4" - a question about the results, not a reason to search the
+        // disk again.
+        string _filter = "";
+
         Font _mono;
         Font _monoBold;
         double _cell = 8;   // width of one character cell, see ApplyFonts
         ContextMenuStrip _menu;
 
         public event EventHandler<OpenHitEventArgs> OpenRequested;
+
+        // Raised for Ctrl+F and for the context menu item. The bar itself
+        // belongs to the window, so the list asks rather than owning one.
+        public event EventHandler FindRequested;
 
         public int FileCount { get { return _files.Count; } }
 
@@ -219,23 +230,84 @@ namespace RSFind
             Rebuild();
         }
 
+        // What the filter matches, and why each half is there.
+        //
+        // A file whose PATH matches keeps all of its hits, because "show me
+        // LAB4" means the whole file, and the host is in the filename rather
+        // than in any of the lines. A hit whose LINE matches is kept on its
+        // own, with its file header for company, because a header with no rows
+        // under it looks like a file that matched nothing.
+        bool FileNameMatches(FileHits fh)
+        {
+            return ViewRules.FileKeepsEverything(_filter, fh.RelativePath);
+        }
+
+        bool HitMatches(Hit hit)
+        {
+            return ViewRules.HitIsShown(_filter, null, hit.Line, hit.Location);
+        }
+
+        bool FileHasAnything(FileHits fh)
+        {
+            if (FileNameMatches(fh)) return true;
+            for (int h = 0; h < fh.Hits.Count; h++)
+                if (HitMatches(fh.Hits[h])) return true;
+            return false;
+        }
+
+        // Rows currently listed, and rows the search found, so the filter can
+        // report what it is hiding rather than leaving a short list to be read
+        // as a short answer.
+        public int VisibleHits { get; private set; }
+
+        public int TotalHits
+        {
+            get
+            {
+                int n = 0;
+                for (int f = 0; f < _files.Count; f++) n += _files[f].Hits.Count;
+                return n;
+            }
+        }
+
+        public string Filter
+        {
+            get { return _filter; }
+        }
+
+        public void SetFilter(string filter)
+        {
+            string next = filter == null ? "" : filter;
+            if (string.Equals(next, _filter, StringComparison.Ordinal)) return;
+            _filter = next;
+            Rebuild();
+        }
+
         void Rebuild()
         {
             _rows.Clear();
+            VisibleHits = 0;
             for (int f = 0; f < _files.Count; f++)
             {
+                bool wholeFile = FileNameMatches(_files[f]);
+                if (!wholeFile && !FileHasAnything(_files[f])) continue;
+
                 Row header = new Row();
                 header.Kind = RowKind.File;
                 header.File = f;
                 header.Hit = -1;
                 _rows.Add(header);
 
+                List<Hit> hits = _files[f].Hits;
+                for (int h = 0; h < hits.Count; h++)
+                    if (wholeFile || HitMatches(hits[h])) VisibleHits++;
+
                 if (_collapsed[f]) continue;
 
-                List<Hit> hits = _files[f].Hits;
                 for (int h = 0; h < hits.Count; h++)
                 {
                     Hit hit = hits[h];
+                    if (!wholeFile && !HitMatches(hit)) continue;
                     if (hit.Before != null)
                     {
                         for (int b = hit.Before.Length; b > 0; b--)
@@ -317,6 +389,17 @@ namespace RSFind
             DrawLineRow(g, bounds, pad, row, t);
         }
 
+        static int ArrowSize { get { return Dpi.S(7); } }
+
+        // Where the filename starts, and therefore where the disclosure target
+        // ends. One number so the drawing and the hit test cannot drift apart:
+        // a gap between them would be a strip that looks like the arrow and
+        // does not toggle, or one that looks like the name and does.
+        static int DisclosureWidth
+        {
+            get { return Dpi.S(6) + ArrowSize * 2 + Dpi.S(6); }
+        }
+
         void DrawFileRow(Graphics g, Rectangle bounds, int pad, int fileIndex, Theme t)
         {
             FileHits fh = _files[fileIndex];
@@ -324,7 +407,7 @@ namespace RSFind
 
             // The disclosure triangle, drawn rather than glyphed so it follows
             // the palette like everything else.
-            int arrow = Dpi.S(7);
+            int arrow = ArrowSize;
             int cy = bounds.Y + bounds.Height / 2;
             using (SolidBrush b = new SolidBrush(t.TxtDim))
             {
@@ -335,14 +418,20 @@ namespace RSFind
                 g.FillPolygon(b, tri);
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
             }
-            x += arrow * 2 + pad;
+            x = bounds.X + DisclosureWidth;
 
             Rectangle rest = new Rectangle(x, bounds.Y, bounds.Right - x - pad, bounds.Height);
             x += DrawRun(g, fh.RelativePath, _monoBold, rest, t.Txt);
 
+            int shown = VisibleIn(fh);
             StringBuilder tail = new StringBuilder();
-            tail.Append("  (").Append(fh.Hits.Count.ToString(CultureInfo.InvariantCulture));
-            tail.Append(fh.Hits.Count == 1 ? " hit" : " hits");
+            tail.Append("  (").Append(shown.ToString(CultureInfo.InvariantCulture));
+            // While filtered, the count says what it is out of. A header
+            // reading "1 hit" over a file that actually matched seven would be
+            // the pane quietly disagreeing with the search.
+            if (shown != fh.Hits.Count)
+                tail.Append(" of ").Append(fh.Hits.Count.ToString(CultureInfo.InvariantCulture));
+            tail.Append(shown == 1 && shown == fh.Hits.Count ? " hit" : " hits");
             if (fh.Truncated) tail.Append(", capped");
             tail.Append(')');
             rest = new Rectangle(x, bounds.Y, bounds.Right - x - pad, bounds.Height);
@@ -501,10 +590,12 @@ namespace RSFind
             int index = IndexAt(e.Location);
             if (index < 0) return;
             Row row = _rows[index];
-            // A click anywhere on a file header toggles it. The triangle is a
-            // hint, not a hit target: a 7px arrow is a poor thing to ask
-            // someone to hit repeatedly.
-            if (row.Kind == RowKind.File) Toggle(row.File);
+
+            // Only the indent toggles. Clicking the filename used to collapse
+            // the group, which made double-clicking a header to open the file
+            // impossible - the two clicks arrived first and cancelled each
+            // other out.
+            if (row.Kind == RowKind.File && e.X < DisclosureWidth) Toggle(row.File);
         }
 
         protected override void OnDoubleClick(EventArgs e)
@@ -549,6 +640,17 @@ namespace RSFind
             return i >= 0 && i < _rows.Count ? i : -1;
         }
 
+        // Used when the filter bar hands focus back: arriving in an empty
+        // selection means the arrow keys do nothing, which reads as the list
+        // being dead.
+        public void SelectFirst()
+        {
+            if (_rows.Count == 0) return;
+            SelectedIndices.Clear();
+            SelectedIndices.Add(0);
+            EnsureVisible(0);
+        }
+
         void Toggle(int fileIndex)
         {
             _collapsed[fileIndex] = !_collapsed[fileIndex];
@@ -559,13 +661,28 @@ namespace RSFind
         {
             int index = FocusedIndex();
             if (index < 0) return;
-            Row row = _rows[index];
-            if (row.Kind == RowKind.File) { Toggle(row.File); return; }
             if (OpenRequested == null) return;
-            Hit hit = _files[row.File].Hits[row.Hit];
-            OpenRequested(this, new OpenHitEventArgs(_files[row.File].Path,
-                                                     hit.LineNumber + row.Rel,
-                                                     hit.Location != null));
+            Row row = _rows[index];
+            FileHits fh = _files[row.File];
+
+            // A file header opens the file, at its first hit rather than at
+            // line 1: someone who double-clicks the header of a log that
+            // matched on line 1402 wants to be at line 1402, not at the top of
+            // a session transcript.
+            Hit hit;
+            int line;
+            if (row.Kind == RowKind.File)
+            {
+                if (fh.Hits.Count == 0) return;
+                hit = fh.Hits[0];
+                line = hit.LineNumber;
+            }
+            else
+            {
+                hit = fh.Hits[row.Hit];
+                line = hit.LineNumber + row.Rel;
+            }
+            OpenRequested(this, new OpenHitEventArgs(fh.Path, line, hit.Location != null));
         }
 
         // ---- copy and export ------------------------------------------------
@@ -581,11 +698,58 @@ namespace RSFind
             return sb.ToString();
         }
 
+        int VisibleIn(FileHits fh)
+        {
+            if (_filter.Length == 0 || FileNameMatches(fh)) return fh.Hits.Count;
+            int n = 0;
+            for (int h = 0; h < fh.Hits.Count; h++) if (HitMatches(fh.Hits[h])) n++;
+            return n;
+        }
+
+        // Everything the filter admits, whether or not its group is collapsed.
+        //
+        // The two states are not the same kind of thing. A filter is a
+        // statement about which results are wanted, so it belongs in what gets
+        // copied. Collapsing is a way to get a long list out of the way while
+        // reading, and someone who collapses a group before copying has not
+        // asked to leave its contents behind.
         public string AllAsText()
         {
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < _rows.Count; i++) sb.AppendLine(RowAsText(_rows[i]));
+            for (int f = 0; f < _files.Count; f++)
+            {
+                FileHits fh = _files[f];
+                bool wholeFile = FileNameMatches(fh);
+                if (!wholeFile && !FileHasAnything(fh)) continue;
+
+                Row header = new Row();
+                header.Kind = RowKind.File;
+                header.File = f;
+                header.Hit = -1;
+                sb.AppendLine(RowAsText(header));
+
+                for (int h = 0; h < fh.Hits.Count; h++)
+                {
+                    if (!wholeFile && !HitMatches(fh.Hits[h])) continue;
+                    Hit hit = fh.Hits[h];
+                    if (hit.Before != null)
+                        for (int bIndex = hit.Before.Length; bIndex > 0; bIndex--)
+                            sb.AppendLine(RowAsText(MakeLineRow(f, h, -bIndex)));
+                    sb.AppendLine(RowAsText(MakeLineRow(f, h, 0)));
+                    if (hit.After != null)
+                        for (int a = 1; a <= hit.After.Length; a++)
+                            sb.AppendLine(RowAsText(MakeLineRow(f, h, a)));
+                }
+            }
             return sb.ToString();
+        }
+
+        public void CopyAll()
+        {
+            string text = AllAsText();
+            if (text.Length == 0) return;
+            try { Clipboard.SetText(text); }
+            catch (System.Runtime.InteropServices.ExternalException) { }
         }
 
         string RowAsText(Row row)
@@ -631,7 +795,10 @@ namespace RSFind
             _menu.ShowImageMargin = false;
 
             Add(_menu, "Open", delegate { OpenSelected(); });
-            Add(_menu, "Copy", delegate { CopySelection(); });
+            Add(_menu, "Copy Selected", delegate { CopySelection(); });
+            // The reason this exists: pasting a whole result set into a second
+            // file and reading it there is a normal way to work through one.
+            Add(_menu, "Copy All Results", delegate { CopyAll(); });
             Add(_menu, "Copy Path", delegate
             {
                 string p = SelectedPath();
@@ -648,6 +815,11 @@ namespace RSFind
                     System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + p + "\"");
                 }
                 catch (System.ComponentModel.Win32Exception) { }
+            });
+            _menu.Items.Add(new ToolStripSeparator());
+            Add(_menu, "Find in Results", delegate
+            {
+                if (FindRequested != null) FindRequested(this, EventArgs.Empty);
             });
             _menu.Items.Add(new ToolStripSeparator());
             Add(_menu, "Expand All", delegate { SetAllCollapsed(false); });

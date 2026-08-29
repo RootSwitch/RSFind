@@ -35,6 +35,10 @@ namespace RSFind
         SpinBox _maxMb, _before, _after;
         Label _folderLabel, _queryLabel, _maskLabel, _excludeLabel, _mbLabel, _contextLabel, _summary;
         Panel _top;
+        Panel _resultsHost, _filterBar;
+        TextBox _filter;
+        InputHost _filterHost;
+        Label _filterLabel, _filterCount;
         ResultsView _results;
         ContextMenuStrip _menu;
         ToolStripMenuItem _explorerItem;
@@ -84,6 +88,11 @@ namespace RSFind
             _pump.Interval = 150;
             _pump.Tick += OnPump;
 
+            // The window sees keys before the focused control, so Ctrl+F works
+            // wherever the caret happens to be.
+            KeyPreview = true;
+            KeyDown += OnFormKeyDown;
+
             Resize += delegate { LayoutTop(); };
             FormClosing += OnFormClosing;
             Shown += delegate { _query.Focus(); };
@@ -101,8 +110,20 @@ namespace RSFind
             _results = new ResultsView();
             _results.Dock = DockStyle.Fill;
             _results.OpenRequested += OnOpenRequested;
-            Controls.Add(_results);
-            Controls.SetChildIndex(_results, 0);   // Fill must sit under the docked Top
+            _results.FindRequested += delegate { ShowFilter(); };
+
+            BuildFilterBar();
+
+            // The filter bar belongs to the results, not to the search chrome,
+            // so it lives in the same container and appears directly above
+            // them. Within a container the last child docks first, so the bar
+            // is added after the list it sits on top of.
+            _resultsHost = new Panel();
+            _resultsHost.Dock = DockStyle.Fill;
+            _resultsHost.Controls.Add(_results);
+            _resultsHost.Controls.Add(_filterBar);
+            Controls.Add(_resultsHost);
+            Controls.SetChildIndex(_resultsHost, 0);   // Fill must sit under the docked Top
 
             _folderLabel = NewLabel("Search in");
             _folder = NewBox();
@@ -178,6 +199,114 @@ namespace RSFind
             _top.Controls.Add(_replaceHost);
             _top.Controls.Add(_includeHost);
             _top.Controls.Add(_excludeHost);
+        }
+
+        // Ctrl+F narrows what is on screen rather than stepping through it.
+        //
+        // Find-next would match the muscle memory, but not the job. The
+        // question that raises this bar is "which of these thousand hits was
+        // on LAB4", and a host appears on dozens of rows - so find-next means
+        // pressing it dozens of times, while a filter answers in one go and
+        // leaves a short list to double-click. Escape puts everything back.
+        void BuildFilterBar()
+        {
+            _filterBar = new Panel();
+            _filterBar.Dock = DockStyle.Top;
+            _filterBar.Height = Dpi.S(34);
+            _filterBar.Visible = false;
+            _filterBar.BackColor = Th.T.Panel;
+
+            _filterLabel = new Label();
+            _filterLabel.Text = "Find in results";
+            _filterLabel.AutoSize = true;
+            _filterLabel.BackColor = Th.T.Panel;
+            _filterLabel.ForeColor = Th.T.Txt;
+            _filterBar.Controls.Add(_filterLabel);
+
+            _filter = new TextBox();
+            _filter.BorderStyle = BorderStyle.None;
+            _filter.TextChanged += delegate
+            {
+                _results.SetFilter(_filter.Text);
+                UpdateFilterCount();
+            };
+            _filter.KeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) { HideFilter(); e.SuppressKeyPress = true; }
+                // Enter moves to the list, because the next thing anyone does
+                // after narrowing is open one of the rows.
+                else if (e.KeyCode == Keys.Enter)
+                {
+                    _results.Focus();
+                    _results.SelectFirst();
+                    e.SuppressKeyPress = true;
+                }
+            };
+            _filterHost = new InputHost(_filter, Dpi.S(6), Dpi.S(4));
+            _filterBar.Controls.Add(_filterHost);
+
+            _filterCount = new Label();
+            _filterCount.AutoSize = false;
+            _filterCount.BackColor = Th.T.Panel;
+            _filterCount.ForeColor = Th.T.TxtDim;
+            _filterCount.TextAlign = ContentAlignment.MiddleLeft;
+            _filterBar.Controls.Add(_filterCount);
+
+            _filterBar.Resize += delegate { LayoutFilterBar(); };
+        }
+
+        void LayoutFilterBar()
+        {
+            if (_filterBar == null) return;
+            int pad = Dpi.S(10);
+            int rowH = Dpi.S(24);
+            int y = (_filterBar.Height - rowH) / 2;
+            _filterLabel.SetBounds(pad, y + (rowH - _filterLabel.Height) / 2,
+                                   _filterLabel.Width, _filterLabel.Height);
+            int x = pad + _filterLabel.Width + Dpi.S(10);
+            int countW = Dpi.S(260);
+            int boxW = Math.Max(Dpi.S(80),
+                _filterBar.ClientSize.Width - pad - countW - Dpi.S(10) - x);
+            _filterHost.SetBounds(x, y, boxW, rowH);
+            _filterCount.SetBounds(_filterHost.Right + Dpi.S(10), y, countW, rowH);
+        }
+
+        void ShowFilter()
+        {
+            if (_results.FileCount == 0)
+            {
+                SetSummary("Search something first, then Ctrl+F narrows the results.", true);
+                return;
+            }
+            _filterBar.Visible = true;
+            LayoutFilterBar();
+            UpdateFilterCount();
+            _filter.Focus();
+            _filter.SelectAll();
+        }
+
+        void HideFilter()
+        {
+            if (!_filterBar.Visible) return;
+            // Clearing on the way out, because a hidden filter still hiding
+            // results is the same trap as a scroll position past the end.
+            _filter.Text = "";
+            _results.SetFilter("");
+            _filterBar.Visible = false;
+            _results.Focus();
+        }
+
+        void UpdateFilterCount()
+        {
+            if (_filterCount == null) return;
+            int shown = _results.VisibleHits;
+            int total = _results.TotalHits;
+            _filterCount.Text = _filter.Text.Length == 0
+                ? "Escape closes this"
+                : "Showing " + shown.ToString("N0", CultureInfo.InvariantCulture)
+                  + " of " + total.ToString("N0", CultureInfo.InvariantCulture)
+                  + (total == 1 ? " hit" : " hits");
+            _filterCount.ForeColor = _filter.Text.Length > 0 && shown == 0 ? Th.T.Warn : Th.T.TxtDim;
         }
 
         Label NewLabel(string text)
@@ -386,6 +515,15 @@ namespace RSFind
             }
             _summary.ForeColor = t.TxtDim;
 
+            if (_filterBar != null)
+            {
+                _filterBar.BackColor = t.Panel;
+                _filterLabel.BackColor = t.Panel;
+                _filterLabel.ForeColor = t.Txt;
+                _filterCount.BackColor = t.Panel;
+                UpdateFilterCount();
+            }
+
             IntPtr old = _iconHandle;
             Icon = Brand.CreateIcon(Dpi.S(32), out _iconHandle);
             if (old != IntPtr.Zero) Native.DestroyIcon(old);
@@ -470,6 +608,23 @@ namespace RSFind
 
         // ---- the search --------------------------------------------------------
 
+        void OnFormKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.F)
+            {
+                ShowFilter();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.KeyCode == Keys.Escape && _filterBar.Visible)
+            {
+                HideFilter();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
         void OnEnterStarts(object sender, KeyEventArgs e)
         {
             if (e.KeyCode != Keys.Enter) return;
@@ -523,6 +678,11 @@ namespace RSFind
                 _query.Focus();
                 return;
             }
+
+            // A filter from the previous result set would hide the new one,
+            // which is the same "it found nothing" trap as a stale scroll
+            // position. A new search starts unfiltered.
+            HideFilter();
 
             _results.ClearResults();
             lock (_pendingLock) { _pending.Clear(); }

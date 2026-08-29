@@ -172,11 +172,40 @@ would be a worse mistake than the one being undone.
 - In regex mode, `$1` and friends are substituted. In literal mode a
   replacement containing `$1` is written exactly as typed.
 
+## Working with the results
+
+**Ctrl+F narrows what is on screen.** A search across a hundred session logs
+answers with a thousand hits, and the next question is usually "which of these
+was on LAB4" - a question about the results, not a reason to search the disk
+again. Type a host, an address, or a timestamp and the pane shows only what
+matches, with a count of what it is hiding. Escape puts everything back.
+
+It filters rather than stepping match to match, because a host appears on
+dozens of rows: find-next would mean pressing it dozens of times, where a
+filter answers in one go and leaves a short list to double-click. Enter moves
+focus into that list.
+
+A filter matching a **filename** keeps that file's hits whole, since the host
+is in the name rather than in any of the matched lines. A filter matching a
+**line** keeps that hit on its own.
+
+**Right-click** the results for Copy Selected, Copy All Results, Copy Path,
+Open Containing Folder, Find in Results, and Expand or Collapse All. Copy All
+Results is for pasting a whole result set into a second file and reading it
+there. It copies everything the filter admits, whether or not a group happens
+to be collapsed - collapsing is a way to get a long list out of the way while
+reading, not a statement about what you want to keep.
+
 ## Opening a result
 
-Double-click a hit, or press Enter. By default the file opens with whatever
-Windows associates. To jump straight to the line, set an editor command under
-**Menu > Editor Command**, using `{file}` and `{line}` as placeholders:
+Double-click a hit, or press Enter. **Double-clicking a file header opens that
+file too**, at its first match rather than at line 1. To collapse a group,
+click the triangle in the indent to its left, or use the left and right arrow
+keys.
+
+By default the file opens with whatever Windows associates. To jump straight to
+the line, set an editor command under **Menu > Editor Command**, using `{file}`
+and `{line}` as placeholders:
 
 ```
 notepad++ {file} -n{line}

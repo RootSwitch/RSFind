@@ -190,7 +190,19 @@ $plants = @(
        from = 'return topIndex >= newCount;'
        to   = 'return false;'
        want = 'a short result set after a scrolled long one pulls the view home'
-       why  = 'a viewport left past the end renders blank with no scrollbar to get back' }
+       why  = 'a viewport left past the end renders blank with no scrollbar to get back' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'if (FileKeepsEverything(filter, relativePath)) return true;'
+       to   = 'if (false) return true;'
+       want = 'every hit in a matching file is kept, whatever the line says'
+       why  = 'filtering by host must keep the whole file, since the host is only in its name' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'return Contains(lineText, filter) || Contains(location, filter);'
+       to   = 'return Contains(lineText, filter);'
+       want = 'a hit matching its location label is kept'
+       why  = 'a workbook hit has a cell reference where a log hit has a line number' }
 
     # There is no plant for "a list that grows is left alone". The obvious
     # guard for it was written, planted, and shown to be dead code: a valid top
@@ -198,13 +210,21 @@ $plants = @(
     # guard was removed rather than kept with an untestable plant beside it.
 )
 
-$work = Join-Path $root 'testdata\plant'
+$plantRoot = Join-Path $root 'testdata\plant'
 $failures = 0
 $i = 0
 
 foreach ($plant in $plants) {
     $i++
-    if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+    # Each plant gets its own directory rather than reusing one.
+    #
+    # Reusing a single folder meant deleting the previous Planted.exe at the
+    # top of every iteration, and Windows does not always release an
+    # executable the instant its process exits - a scanner or a lingering
+    # handle turns that delete into an access-denied that aborts the run
+    # halfway through, reported as a permissions error rather than as anything
+    # to do with the plants. A fresh directory never contends for a lock.
+    $work = Join-Path $plantRoot $i.ToString('00')
     New-Item -ItemType Directory -Force -Path $work | Out-Null
 
     foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'ViewRules.cs', 'FindEngine.cs') {
@@ -268,9 +288,20 @@ foreach ($plant in $plants) {
     }
 }
 
-if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+# Best effort. A binary still held by a scanner is not a reason to report the
+# run as failed, and the next run writes into fresh numbered directories
+# regardless of what is left here.
+try {
+    if (Test-Path $plantRoot) { Remove-Item -Recurse -Force $plantRoot -ErrorAction Stop }
+} catch {
+    Write-Host ("note: {0} could not be removed yet ({1})" -f $plantRoot, $_.Exception.Message)
+}
 $testdata = Join-Path $root 'testdata'
-if ((Test-Path $testdata) -and -not (Get-ChildItem $testdata)) { Remove-Item -Force $testdata }
+try {
+    if ((Test-Path $testdata) -and -not (Get-ChildItem $testdata)) {
+        Remove-Item -Force $testdata -ErrorAction Stop
+    }
+} catch { }
 
 Write-Host ""
 if ($failures -gt 0) {

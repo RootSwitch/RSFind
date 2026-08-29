@@ -99,13 +99,13 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 193 engine checks with the same in-box compiler, then the house
+Builds and runs 206 engine checks with the same in-box compiler, then the house
 style check. To confirm the checks can still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants twenty-seven defects into the copies one at a time, and
-verifies that each is caught by the check that owns it. It never modifies the
-working files.
+That copies the tree, plants twenty-nine defects into the copies one at a time,
+and verifies that each is caught by the check that owns it. It never modifies
+the working files.
