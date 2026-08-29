@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+**Replace, behind a preview that cannot be skipped.** There is no command-line
+replace, no "replace all" that bypasses the window, and no path to the write
+code except by reading what it would do first. Eyeballing the results before
+replacing stops being a habit someone has to remember and becomes the only way
+through the feature.
+
+**The replacement takes the case of what it replaced.** Lower stays lower, a
+sentence opener stays capitalized, and a heading in capitals stays in capitals.
+Without this a documentation pass produces a hundred new sentence-case mistakes
+alongside the fix it was meant to make. A replacement carrying its own capitals
+is used literally, because it was typed that way on purpose.
+
+**Three integrity checks stand between a stale preview and a write, and each is
+tested against the edit only it can catch.** Size, timestamp, and re-reading
+every line being edited. Writing the planted-defect entries for these is what
+revealed that the original single test only ever exercised the size check; the
+other two guards were untested and both plants passed. There are now three
+tests and three plants.
+
+**Verification happens twice.** Once to build the preview and again
+immediately before the write, because minutes can pass while someone reads it.
+
+**Files are rebuilt from character offsets, not by splitting and rejoining
+lines.** Rejoining normalizes line endings, adds or drops a trailing newline,
+and rewrites every line in a file where one was meant to change. The tests
+assert that CRLF survives and that a file with no final newline does not gain
+one.
+
+**An encoding that cannot store the replacement is refused, not written.**
+`Encoding.Default` turns anything outside its codepage into a question mark and
+reports success, so replacing a word in a Windows-1252 file with one containing
+a Greek letter would silently destroy it. Every write is round-tripped through
+its own encoding first and refused if it does not come back identical.
+
+**Undo restores a whole run as a unit, and refuses any file edited since.**
+Originals are copied to `%APPDATA%\RSFind\undo\<timestamp>\` before anything is
+written, with a manifest recording what was written so a later edit can be
+detected. Restoring over someone's subsequent work would be a worse mistake
+than the one being undone.
+
+**Strip-ANSI now marks a file transformed only if it actually stripped
+something.** It defaults to on, so a flag set unconditionally would have made
+Replace refuse every file in a folder of Markdown - the option would have been
+a trap rather than a default.
+
+**Runs are capped at 5,000 changes.** Above that a preview stops being a
+preview, so the run is refused with advice to narrow the search rather than
+showing a sample and implying the rest was reviewed.
+
+**charcheck grew a scoped opt-out.** The case-preservation code and its tests
+have to spell out the British spellings they convert. Exempting whole files
+would let real drift hide in the two largest sources in the project, so the
+opt-out is a marked region that suspends only the spelling scan - dashes are
+still checked inside it, and drift outside it still fails.
+
 **`.xlsx` and `.docx` are searched, with no dependency.** Both formats are a
 ZIP of XML and .NET Framework ships both readers in the box, so the one thing
 every grep-shaped tool declines to do costs two in-box references rather than

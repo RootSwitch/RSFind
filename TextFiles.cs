@@ -239,11 +239,26 @@ namespace RSFind
 
             if (stripAnsi)
             {
-                // CR-only redraw frames become their own lines here, where the
-                // content is already transformed and cannot be written back
-                // anyway.
-                text = StripAnsi(text).Replace("\r\n", "\n").Replace('\r', '\n');
-                c.Transformed = true;
+                // Transformed is set only when the strip actually removed
+                // something, not merely because the option was on.
+                //
+                // This matters more than it looks. Strip-ANSI is on by
+                // default, and a flag set unconditionally would mark every
+                // file unsafe to rewrite - so a Replace across a folder of
+                // Markdown, which contains no escapes whatsoever, would refuse
+                // every file and the option would be a trap rather than a
+                // default. A file the strip did not touch is byte-for-byte the
+                // file on disk, and its offsets are as good as if the option
+                // had been off.
+                string stripped = StripAnsi(text);
+                if (!string.Equals(stripped, text, StringComparison.Ordinal))
+                {
+                    // Only now is it worth splitting CR-only redraw frames
+                    // onto their own lines: the content is already altered, so
+                    // there is nothing left to preserve.
+                    text = stripped.Replace("\r\n", "\n").Replace('\r', '\n');
+                    c.Transformed = true;
+                }
             }
 
             NewlineStyle style;

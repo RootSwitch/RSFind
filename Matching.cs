@@ -117,6 +117,56 @@ namespace RSFind
             return false;
         }
 
+        // Expands $1 and friends against the match that starts at 'start'.
+        // In literal mode the replacement is already literal and comes back
+        // untouched - notably WITHOUT treating $1 as a group reference, which
+        // would be a nasty surprise for someone replacing a price.
+        public string Expand(string line, int start, string replacement)
+        {
+            if (regex == null) return replacement;
+            Match m;
+            try
+            {
+                m = regex.Match(line, start);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                throw new PatternError("the pattern timed out while building the replacement");
+            }
+            if (!m.Success || m.Index != start)
+                throw new PatternError("the pattern no longer matches where the search found it");
+            try
+            {
+                return m.Result(replacement);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new PatternError(ex.Message);
+            }
+            catch (NotSupportedException ex)
+            {
+                throw new PatternError(ex.Message);
+            }
+        }
+
+        // Checks a replacement string before anything is planned, so a typo in
+        // "$1" reports itself once rather than as a refusal on every file.
+        public void ValidateReplacement(string replacement)
+        {
+            if (regex == null || replacement == null) return;
+            try
+            {
+                Match m = regex.Match("");
+                // Result requires a successful match, so an unmatchable
+                // pattern cannot be validated here. That is fine: Expand
+                // reports it later, per file, with the same exception type.
+                if (m.Success) m.Result(replacement);
+            }
+            catch (ArgumentException ex) { throw new PatternError(ex.Message); }
+            catch (NotSupportedException ex) { throw new PatternError(ex.Message); }
+            catch (RegexMatchTimeoutException) { }
+        }
+
         // True when the run is not glued to a word character on either side.
         // Closer to what a person means by "whole word" than \b is for a
         // literal that itself starts or ends with punctuation.

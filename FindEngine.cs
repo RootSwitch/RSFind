@@ -76,14 +76,17 @@ namespace RSFind
         public string EncodingName;
         public bool HasBom;
         public NewlineStyle Newlines;
-        public bool Transformed;    // strip-ANSI was on: offsets are not on-disk offsets
+        public bool Transformed;    // the text was altered: offsets are not on-disk offsets
+        public bool Extracted;     // the text came out of a container, not off the disk
         public long Length;
         public DateTime LastWriteUtc;
 
-        // The one question Replace has to ask before writing.
+        // The first question Replace asks. It is necessary, not sufficient -
+        // Replacer re-reads the file and re-verifies every line before it
+        // writes anything.
         public bool IsSafeToRewrite
         {
-            get { return !Transformed; }
+            get { return !Transformed && !Extracted; }
         }
     }
 
@@ -381,7 +384,7 @@ namespace RSFind
                 fh.Newlines = NewlineStyle.None;
                 // Extracted text is not the bytes on disk under any reading,
                 // so a Replace could never write it back from these offsets.
-                fh.Transformed = true;
+                fh.Extracted = true;
             }
             else
             {

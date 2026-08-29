@@ -122,7 +122,69 @@ $plants = @(
        from = 'settings.DtdProcessing = DtdProcessing.Prohibit;'
        to   = 'settings.DtdProcessing = DtdProcessing.Parse;'
        want = 'a DTD in an Office file is refused, not expanded'
-       why  = 'an XML parser that expands entities turns a file search into a file reader' }
+       why  = 'an XML parser that expands entities turns a file search into a file reader' },
+
+    # Replace is the one feature here that can destroy a directory, so every
+    # guard on it gets a plant.
+    @{ file = 'Replacer.cs'
+       from = 'if (info.LastWriteTimeUtc != file.LastWriteUtc)'
+       to   = 'if (false)'
+       want = 'an edit elsewhere in the file is refused too'
+       why  = 'replacing into a file edited since the search writes from stale offsets' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (!string.Equals(current, hit.Line, StringComparison.Ordinal))'
+       to   = 'if (false)'
+       want = 'an edit that kept the size and the timestamp is caught by re-reading the line'
+       why  = 'the timestamp check alone misses an edit that kept the same size' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (file.Extracted)'
+       to   = 'if (false)'
+       want = 'the refusal says it came from an Office file'
+       why  = 'writing extracted text back over a workbook would destroy the zip' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (file.Transformed)'
+       to   = 'if (false)'
+       want = 'the refusal names the option to turn off'
+       why  = 'stripped offsets point at cleaned text, not at the bytes on disk' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (!string.Equals(roundTrip, text, StringComparison.Ordinal))'
+       to   = 'if (false)'
+       want = 'a replacement the encoding cannot store is not written'
+       why  = 'an ANSI codepage turns what it cannot store into a question mark and reports success' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (!change.Selected) continue;'
+       to   = 'if (false) continue;'
+       want = 'an unchecked change is not written'
+       why  = 'the checkbox in the preview is the whole consent mechanism' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (now.Length != expectedLength || now.LastWriteTimeUtc.Ticks != expectedTicks)'
+       to   = 'if (false)'
+       want = 'undo does not restore over a later edit'
+       why  = 'undo must not overwrite work someone did after the replace' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (options.PreserveCase) replacement = PreserveCase(matched, replacement);'
+       to   = 'if (false) replacement = PreserveCase(matched, replacement);'
+       want = 'the capital is preserved'
+       why  = 'without case preservation a docs pass lowercases every sentence opener' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (HasUpper(replacement)) return replacement;'
+       to   = 'if (false) return replacement;'
+       want = 'an upper case match does not upper case a deliberate replacement'
+       why  = 'reshaping a replacement that carries its own capitals overrules the person' },
+
+    @{ file = 'TextFiles.cs'
+       from = 'if (!string.Equals(stripped, text, StringComparison.Ordinal))'
+       to   = 'if (true)'
+       want = 'strip-ANSI does not make a file without escapes unreplaceable'
+       why  = 'marking every file transformed makes Replace refuse everything by default' }
 )
 
 $work = Join-Path $root 'testdata\plant'
@@ -134,7 +196,7 @@ foreach ($plant in $plants) {
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }
     New-Item -ItemType Directory -Force -Path $work | Out-Null
 
-    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'FindEngine.cs') {
+    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'FindEngine.cs') {
         Copy-Item (Join-Path $root $name) (Join-Path $work $name)
     }
     Copy-Item (Join-Path $root 'tools\EngineTests.cs') (Join-Path $work 'EngineTests.cs')
@@ -160,7 +222,7 @@ foreach ($plant in $plants) {
     # exists to observe - a defect being caught would look like a script crash.
     $log = Join-Path $work 'out.txt'
     $exe = Join-Path $work 'Planted.exe'
-    $sources = @('Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'FindEngine.cs', 'EngineTests.cs') |
+    $sources = @('Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'Replacer.cs', 'FindEngine.cs', 'EngineTests.cs') |
                ForEach-Object { '"' + (Join-Path $work $_) + '"' }
     cmd /c ('"' + $csc + '" /nologo /target:exe /r:System.Xml.dll ' +
             '/r:System.IO.Compression.dll /out:"' + $exe + '" ' +

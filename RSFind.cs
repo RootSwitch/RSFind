@@ -26,10 +26,12 @@ namespace RSFind
     {
         Settings _settings;
 
-        TextBox _folder, _query, _include, _exclude;
-        InputHost _folderHost, _queryHost, _includeHost, _excludeHost;
-        ThemedButton _browse, _find, _cancel, _menuButton;
+        TextBox _folder, _query, _include, _exclude, _replace;
+        InputHost _folderHost, _queryHost, _includeHost, _excludeHost, _replaceHost;
+        ThemedButton _browse, _find, _cancel, _menuButton, _preview;
         ThemedCheck _matchCase, _wholeWord, _regex, _subfolders, _skipBinary, _stripAnsi;
+        ThemedCheck _preserveCase;
+        Label _replaceLabel;
         SpinBox _maxMb, _before, _after;
         Label _folderLabel, _queryLabel, _maskLabel, _excludeLabel, _mbLabel, _contextLabel, _summary;
         Panel _top;
@@ -44,6 +46,11 @@ namespace RSFind
         readonly object _pendingLock = new object();
         SearchProgress _progress;
         string _activeQuery = "";
+        // The matcher that produced the results on screen, kept so a Replace
+        // uses the pattern the hits came from rather than whatever is in the
+        // search box by the time the person gets round to replacing.
+        Matcher _activeMatcher;
+        readonly List<FileHits> _found = new List<FileHits>();
         bool _running;
         IntPtr _iconHandle;
 
@@ -125,6 +132,17 @@ namespace RSFind
             _cancel.Enabled = false;
             _cancel.Click += delegate { if (_cts != null) _cts.Cancel(); };
 
+            _replaceLabel = NewLabel("Replace with");
+            _replace = NewBox();
+            _replaceHost = new InputHost(_replace, Dpi.S(6), Dpi.S(4));
+
+            _preserveCase = NewCheck("Preserve case");
+            _preserveCase.Checked = true;
+
+            _preview = NewButton("Preview", false);
+            _preview.Enabled = false;
+            _preview.Click += delegate { PreviewReplace(); };
+
             _matchCase = NewCheck("Match case");
             _wholeWord = NewCheck("Match whole word");
             _regex = NewCheck("Use regex");
@@ -157,6 +175,7 @@ namespace RSFind
 
             _top.Controls.Add(_folderHost);
             _top.Controls.Add(_queryHost);
+            _top.Controls.Add(_replaceHost);
             _top.Controls.Add(_includeHost);
             _top.Controls.Add(_excludeHost);
         }
@@ -231,6 +250,10 @@ namespace RSFind
 
             _menu.Items.Add(new ToolStripSeparator());
 
+            ToolStripMenuItem undo = new ToolStripMenuItem("Undo Last Replace");
+            undo.Click += OnUndoReplace;
+            _menu.Items.Add(undo);
+
             ToolStripMenuItem export = new ToolStripMenuItem("Export Results...");
             export.Click += OnExport;
             _menu.Items.Add(export);
@@ -281,6 +304,19 @@ namespace RSFind
             _find.SetBounds(_cancel.Left - gap - buttonW, y, buttonW, rowH);
             _queryHost.SetBounds(pad + labelW, y,
                                  Math.Max(Dpi.S(80), _find.Left - gap - pad - labelW), rowH);
+            y += rowH + gap;
+
+            // Row 3: replace. Always visible rather than behind a toggle - a
+            // destructive control that appears and disappears is harder to
+            // reason about than one that is simply inert until a search has
+            // produced something to act on.
+            Place(_replaceLabel, pad, y, rowH);
+            _preview.SetBounds(right - buttonW, y, buttonW, rowH);
+            _preserveCase.SizeToText();
+            _preserveCase.SetBounds(_preview.Left - gap - _preserveCase.Width, y,
+                                    _preserveCase.Width, rowH);
+            _replaceHost.SetBounds(pad + labelW, y,
+                Math.Max(Dpi.S(80), _preserveCase.Left - gap - pad - labelW), rowH);
             y += rowH + gap;
 
             // Row 3: the toggles, wrapping if the window is narrow.
@@ -491,8 +527,11 @@ namespace RSFind
             _results.ClearResults();
             lock (_pendingLock) { _pending.Clear(); }
             _errors.Clear();
+            _found.Clear();
+            _preview.Enabled = false;
             _progress = null;
             _activeQuery = o.Query;
+            _activeMatcher = new Matcher(o.Query, o.MatchCase, o.WholeWord, o.UseRegex);
             _running = true;
             _find.Enabled = false;
             _cancel.Enabled = true;
@@ -537,7 +576,11 @@ namespace RSFind
                     _pending.Clear();
                 }
             }
-            if (batch != null) _results.AddFiles(batch);
+            if (batch != null)
+            {
+                _results.AddFiles(batch);
+                _found.AddRange(batch);
+            }
 
             SearchProgress p = _progress;
             if (p == null) return;
@@ -556,11 +599,14 @@ namespace RSFind
             {
                 if (_pending.Count > 0)
                 {
-                    _results.AddFiles(new List<FileHits>(_pending));
+                    List<FileHits> last = new List<FileHits>(_pending);
+                    _results.AddFiles(last);
+                    _found.AddRange(last);
                     _pending.Clear();
                 }
             }
             SetSummary(Describe(p), false);
+            _preview.Enabled = _found.Count > 0;
         }
 
         string Describe(SearchProgress p)
@@ -617,6 +663,132 @@ namespace RSFind
         {
             _summary.Text = text;
             _summary.ForeColor = warn ? Th.T.Warn : Th.T.TxtDim;
+        }
+
+        // ---- replace ---------------------------------------------------------------
+
+        static string UndoRoot { get { return Path.Combine(Settings.Dir, "undo"); } }
+
+        void PreviewReplace()
+        {
+            if (_running || _found.Count == 0 || _activeMatcher == null) return;
+
+            if (_replace.Text.Length == 0)
+            {
+                SetSummary("Type what to replace the matches with.", true);
+                _replace.Focus();
+                return;
+            }
+
+            try
+            {
+                _activeMatcher.ValidateReplacement(_replace.Text);
+            }
+            catch (PatternError ex)
+            {
+                SetSummary("Bad replacement: " + ex.Message, true);
+                _replace.Focus();
+                return;
+            }
+
+            // Refuse before planning rather than after. Planning re-reads every
+            // matched file, and a run this size is one the person should narrow
+            // regardless of what the preview would have shown.
+            int total = 0;
+            for (int i = 0; i < _found.Count; i++) total += _found[i].Hits.Count;
+            if (total > ReplaceDialog.MaxPreviewChanges)
+            {
+                SetSummary("That would change " + total.ToString("N0", CultureInfo.InvariantCulture)
+                    + " lines, which is more than the preview will show. Narrow the search with a "
+                    + "file mask or a folder further in, then replace.", true);
+                return;
+            }
+
+            ReplaceOptions options = new ReplaceOptions();
+            options.Replacement = _replace.Text;
+            options.PreserveCase = _preserveCase.Checked;
+
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            for (int i = 0; i < _found.Count; i++)
+                plans.Add(Replacer.Plan(_found[i], _activeMatcher, options));
+
+            bool anything = false;
+            for (int i = 0; i < plans.Count; i++)
+                if (plans[i].Refusal == null) { anything = true; break; }
+            if (!anything && plans.Count > 0)
+            {
+                SetSummary("Nothing here can be replaced. Open the preview to see why.", true);
+            }
+
+            using (ReplaceDialog dialog = new ReplaceDialog(plans, _activeQuery, _replace.Text))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            }
+
+            ReplaceResult result = Replacer.Apply(plans, UndoRoot);
+            ReportReplace(result);
+        }
+
+        void ReportReplace(ReplaceResult result)
+        {
+            StringBuilder sb = new StringBuilder();
+            // Matches, not lines: two on the same line are two changes, and
+            // the preview counted them that way.
+            sb.Append("Replaced ").Append(result.ChangesWritten.ToString("N0", CultureInfo.InvariantCulture));
+            sb.Append(result.ChangesWritten == 1 ? " match in " : " matches in ");
+            sb.Append(result.FilesWritten.ToString("N0", CultureInfo.InvariantCulture));
+            sb.Append(result.FilesWritten == 1 ? " file" : " files");
+            if (result.UndoDirectory != null) sb.Append(". Undo is available from the menu");
+            // The list is now a picture of a folder that no longer exists.
+            // Saying so beats letting someone read it as current.
+            if (result.FilesWritten > 0) sb.Append(". The results above show the text as it was");
+            if (result.Failures.Count > 0)
+            {
+                sb.Append(". ").Append(result.Failures.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(result.Failures.Count == 1 ? " file was not written: " : " files were not written: ");
+                sb.Append(result.Failures[0]);
+                if (result.Failures.Count > 1) sb.Append(" (and others)");
+            }
+            SetSummary(sb.ToString(), result.Failures.Count > 0);
+
+            // The results on screen now describe files that have changed, and
+            // replacing again from them would be refused file by file. Saying
+            // so beats letting someone discover it one refusal at a time.
+            if (result.FilesWritten > 0)
+            {
+                _preview.Enabled = false;
+                _found.Clear();
+            }
+        }
+
+        void OnUndoReplace(object sender, EventArgs e)
+        {
+            string dir = Replacer.LatestUndoDirectory(UndoRoot);
+            if (dir == null)
+            {
+                SetSummary("There is no replace to undo.", true);
+                return;
+            }
+
+            if (MessageBox.Show(this,
+                    "Put back the files changed by the last replace?\r\n\r\n"
+                    + "Any file edited since then is left alone.",
+                    "Undo Last Replace", MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Question) != DialogResult.OK)
+                return;
+
+            ReplaceResult result = Replacer.Undo(dir);
+            StringBuilder sb = new StringBuilder();
+            sb.Append("Restored ").Append(result.FilesWritten.ToString("N0", CultureInfo.InvariantCulture));
+            sb.Append(result.FilesWritten == 1 ? " file" : " files");
+            if (result.Failures.Count > 0)
+            {
+                sb.Append(". ").Append(result.Failures.Count.ToString(CultureInfo.InvariantCulture));
+                sb.Append(result.Failures.Count == 1 ? " was left alone: " : " were left alone: ");
+                sb.Append(result.Failures[0]);
+                if (result.Failures.Count > 1) sb.Append(" (and others)");
+            }
+            SetSummary(sb.ToString(), result.Failures.Count > 0);
         }
 
         // ---- commands ------------------------------------------------------------

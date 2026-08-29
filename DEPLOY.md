@@ -75,6 +75,13 @@ Three notes on that:
 That is everything RSFind touches. No service, no scheduled task, no files
 outside those two locations.
 
+**Before you delete `%APPDATA%\RSFind`, know what is in it.** Alongside
+`settings.ini` there is an `undo\` folder holding a copy of every file changed
+by a replace, one folder per run. That is the only record of what those files
+looked like beforehand. Nothing prunes it automatically - a tool that quietly
+deleted the evidence of its own writes would be making exactly the wrong
+tradeoff - so it is yours to clear out when you are satisfied with a change.
+
 ## What it does on a network
 
 Nothing. RSFind makes no outbound connections of any kind: no update check, no
@@ -92,13 +99,13 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 132 engine checks with the same in-box compiler, then the house
+Builds and runs 184 engine checks with the same in-box compiler, then the house
 style check. To confirm the checks can still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants sixteen defects into the copies one at a time, and
+That copies the tree, plants twenty-six defects into the copies one at a time, and
 verifies that each is caught by the check that owns it. It never modifies the
 working files.

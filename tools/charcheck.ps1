@@ -30,7 +30,22 @@ $britishPattern = 'colour|behaviour|neighbour|centre|favourite|licence|defence|'
                   'visuali|minimi|maximi|apologi|analy)se[sd]?\b'
 
 $extensions = '*.cs', '*.ps1', '*.cmd', '*.md', '*.txt', '*.json', '*.yml'
-$skipDirs = '\\\.git\\', '\\bin\\', '\\obj\\'
+# testdata is scratch written by the test run and by demo corpora, and it is
+# gitignored. Scanning it means a fixture full of deliberate British spellings
+# fails the check for the project's own prose.
+$skipDirs = '\\\.git\\', '\\bin\\', '\\obj\\', '\\testdata\\'
+
+# A scoped opt-out for the spelling scan, and the reason it has to exist.
+#
+# RSFind's Replace preserves the case of what it replaced, and the example that
+# feature exists for is colour to color. The tests cannot exercise it without
+# writing the British spelling on purpose, and the documentation cannot explain
+# it without naming it. Exempting whole files would let real drift hide in the
+# two largest source files in the project, so the opt-out is a marked region
+# instead, and it turns off ONLY the spelling scan - dashes and quotes are
+# still checked inside it.
+$spellingOff = 'charcheck:spelling-off'
+$spellingOn = 'charcheck:spelling-on'
 
 $failures = 0
 foreach ($ext in $extensions) {
@@ -41,8 +56,11 @@ foreach ($ext in $extensions) {
 
         $isSelf = $file.FullName -eq $MyInvocation.MyCommand.Path
         $lineNo = 0
+        $spellingSuspended = $false
         foreach ($line in (Get-Content -LiteralPath $file.FullName -Encoding UTF8)) {
             $lineNo++
+            if ($line -match [regex]::Escape($spellingOff)) { $spellingSuspended = $true }
+            elseif ($line -match [regex]::Escape($spellingOn)) { $spellingSuspended = $false }
             $rel = $file.FullName.Substring($root.Length + 1)
             foreach ($ch in $banned.Keys) {
                 if ($line.IndexOf($ch) -ge 0) {
@@ -53,7 +71,7 @@ foreach ($ext in $extensions) {
             }
             # This file necessarily spells out every word it bans, so it is
             # exempt from the spelling scan. It is still checked for dashes.
-            if (-not $isSelf) {
+            if (-not $isSelf -and -not $spellingSuspended) {
                 foreach ($m in [regex]::Matches($line, $britishPattern, 'IgnoreCase')) {
                     Write-Host ("{0}:{1}: British spelling '{2}'" -f $rel, $lineNo, $m.Value) -ForegroundColor Red
                     Write-Host ("    {0}" -f $line.Trim())

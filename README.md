@@ -115,6 +115,63 @@ with a `-n14` argument opens a ZIP as text at line 14.
 read. They are counted separately and named on the summary line, so the number
 you get back is never quietly incomplete.
 
+## Replace
+
+Type a replacement, press **Preview**, and read what would change before
+anything is written. There is no way to replace without going through that
+window - the preview is not a confirmation step bolted on, it is the only path
+through the feature.
+
+![The replace preview, showing case preservation and a refused file](docs/replace.png)
+
+<!-- charcheck:spelling-off - the examples below are the feature, not drift -->
+
+**It preserves the case of what it replaced.** `colour` becomes `color`,
+`Colour` becomes `Color`, and `COLOUR` becomes `COLOR`. This is what makes a
+British-to-American pass over a documentation folder produce a clean diff
+instead of a hundred new sentence-case mistakes. It only reshapes a replacement
+you typed entirely in lower case: one carrying its own capitals - `RSFind`,
+`macOS` - was written that way on purpose and is used literally. Turn the whole
+behavior off with the **Preserve case** checkbox.
+
+One honest caveat the tool cannot solve for you: substring replacement is right
+for `colour`, which carries `colours` and `coloured` along correctly, and wrong
+for `grey`, which would take `greyhound` with it. **Match whole word** is the
+mitigation and the preview is the backstop.
+
+<!-- charcheck:spelling-on -->
+
+### What it refuses, and why
+
+Refused files appear in the preview with their reason, greyed out. They are
+never hidden - a file that silently declines to change is the worst possible
+outcome here.
+
+| Refused | Why |
+|---|---|
+| A file changed since the search | Three checks: size, timestamp, and re-reading every line being edited. The last one catches an edit that kept the same size and restored the timestamp. |
+| An Office file | The text was extracted from a ZIP. Writing it back would destroy the file. |
+| A file whose escapes were stripped | The match positions point at cleaned text, not at the bytes on disk. Turn off **Strip ANSI escapes** and search again. A file containing no escapes is unaffected and can still be replaced. |
+| A binary | Regardless of the exclude-binary setting. Unchecking that box to find a string inside a firmware image is not a request to rewrite it. |
+| A replacement the encoding cannot store | An ANSI codepage silently turns what it cannot store into a question mark and reports success. Refusing beats losing the character. |
+
+### Undo
+
+Every run copies the original files into `%APPDATA%\RSFind\undo\<timestamp>\`
+before writing. **Menu > Undo Last Replace** puts them all back as a unit, and
+skips any file that has been edited since - restoring over someone's later work
+would be a worse mistake than the one being undone.
+
+### Limits
+
+- Runs are capped at 5,000 changes. Above that the preview stops being a
+  preview, so RSFind refuses and asks you to narrow the search instead of
+  showing a sample and implying the rest was reviewed.
+- Files are written through a temporary file and swapped, so an interrupted
+  write leaves the original intact rather than half a file.
+- In regex mode, `$1` and friends are substituted. In literal mode a
+  replacement containing `$1` is written exactly as typed.
+
 ## Opening a result
 
 Double-click a hit, or press Enter. By default the file opens with whatever
@@ -132,11 +189,10 @@ notepad++ {file} -n{line}
   could have been reading your disk while you were not looking.
 - **No network access, ever.** No update check, no telemetry, no crash
   reporting. The binary references only assemblies that ship with Windows.
-- **No Replace.** Not yet, and possibly not at all - it is the one button that
-  can quietly damage a directory. If it lands, it will act only on the result
-  set you are already looking at, with a per-file preview before anything is
-  written. The engine already records the encoding, byte-order mark, and line
-  ending of every file it reads so that a rewrite could be exact.
+- **No replace without a preview.** There is no command-line replace, no
+  "replace all" that skips the window, and no way to reach the write path
+  except by reading what it would do. That is deliberate: it is the one button
+  here that can quietly damage a directory.
 - **No `.xls`, `.doc`, or `.pdf`.** The modern zipped formats are read; the
   older binary ones and PDF are not, and RSFind says so on the summary line
   rather than letting them count as searched.

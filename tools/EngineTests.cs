@@ -52,8 +52,10 @@ namespace RSFind
                 AnsiTests();
                 WorkbookTests();
                 DocumentTests();
+                CaseTests();
                 EngineTests_EndToEnd(root);
                 OfficeEndToEnd(root);
+                ReplaceTests(root);
 
                 Console.WriteLine("PASS  " + checks + " checks");
                 return 0;
@@ -672,6 +674,249 @@ namespace RSFind
 
             Directory.Delete(dir, true);
         }
+
+        // ---- case preservation -------------------------------------------------
+
+        // charcheck:spelling-off
+        // The British spellings below are test data for the feature that
+        // converts them, not prose. The scan is suspended for this method and
+        // for the replace fixtures, and turned back on straight after.
+        static void CaseTests()
+        {
+            // The British-to-American pass, which is what this exists for.
+            Eq(Replacer.PreserveCase("colour", "color"), "color", "lower case stays lower");
+            Eq(Replacer.PreserveCase("Colour", "color"), "Color", "a sentence opener stays capitalized");
+            Eq(Replacer.PreserveCase("COLOUR", "color"), "COLOR", "a heading stays upper case");
+
+            // Substring replacement carries the suffix along correctly, which
+            // is why "colours" does not need its own rule.
+            Eq(Replacer.PreserveCase("Colour", "color") + "s", "Colors", "a suffix follows the stem");
+
+            // No shape to copy, so the replacement is used as written.
+            Eq(Replacer.PreserveCase("cOloUr", "color"), "color", "mixed case is left as authored");
+            Eq(Replacer.PreserveCase("2026", "2027"), "2027", "a match with no letters is left alone");
+
+            // A replacement carrying its own capitals was written that way on
+            // purpose. Reshaping it would be the tool overruling the person.
+            Eq(Replacer.PreserveCase("tool", "RSFind"), "RSFind", "a capitalized replacement is literal");
+            Eq(Replacer.PreserveCase("TOOL", "RSFind"), "RSFind",
+               "an upper case match does not upper case a deliberate replacement");
+            Eq(Replacer.PreserveCase("macos", "macOS"), "macOS", "an inner capital survives");
+
+            Eq(Replacer.PreserveCase("", "color"), "color", "an empty match is harmless");
+            Eq(Replacer.PreserveCase("Colour", ""), "", "an empty replacement is harmless");
+        }
+
+        // ---- replace, end to end -----------------------------------------------
+
+        static FileHits FindOne(string dir, string query, string name, bool stripAnsi, bool regex)
+        {
+            SearchOptions o = NewOptions(dir, query);
+            o.StripAnsi = stripAnsi;
+            o.UseRegex = regex;
+            Dictionary<string, FileHits> byName = new Dictionary<string, FileHits>();
+            RunSearch(o, byName);
+            FileHits fh;
+            return byName.TryGetValue(name, out fh) ? fh : null;
+        }
+
+        static void ReplaceTests(string root)
+        {
+            string dir = Path.Combine(root, "replace");
+            Directory.CreateDirectory(dir);
+            string undo = Path.Combine(dir, "undo");
+
+            ReplaceOptions ro = new ReplaceOptions();
+            ro.Replacement = "color";
+
+            // A documentation pass: three shapes of the same word, CRLF
+            // endings, and no trailing newline on the last line.
+            // The fourth line never matches. It is there so the three
+            // integrity checks can be told apart: an edit confined to it
+            // leaves every matched line intact, so only the timestamp can
+            // catch it.
+            string docPath = Path.Combine(dir, "guide.md");
+            string original = "The colour table\r\nColour is set per theme\r\n"
+                            + "COLOUR OVERRIDES\r\nunrelated trailing note";
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+
+            FileHits fh = FindOne(dir, "colour", "guide.md", false, false);
+            Ok(fh != null, "the documentation file is found");
+            Eq(fh.Hits.Count, 3, "all three shapes of the word are found");
+
+            Matcher m = new Matcher("colour", false, false, false);
+            ReplacePlan plan = Replacer.Plan(fh, m, ro);
+            Ok(plan.Refusal == null, "a plain text file can be planned");
+            Eq(plan.Changes.Count, 3, "every hit becomes a change");
+            Eq(plan.Changes[0].After, "The color table", "lower case is replaced in place");
+            Eq(plan.Changes[1].After, "Color is set per theme", "the capital is preserved");
+            Eq(plan.Changes[2].After, "COLOR OVERRIDES", "the upper case is preserved");
+
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            plans.Add(plan);
+            ReplaceResult r = Replacer.Apply(plans, undo);
+            Eq(r.FilesWritten, 1, "the file is written");
+            Eq(r.ChangesWritten, 3, "all three changes are written");
+            Eq(r.Failures.Count, 0, "nothing failed");
+
+            string replaced = "The color table\r\nColor is set per theme\r\n"
+                            + "COLOR OVERRIDES\r\nunrelated trailing note";
+            string after = File.ReadAllText(docPath);
+            Eq(after, replaced, "the file reads back exactly as previewed");
+            // Rejoining split lines would normalize these away. Working on
+            // offsets keeps them.
+            Ok(after.IndexOf("\r\n", StringComparison.Ordinal) >= 0, "CRLF endings survive");
+            Ok(!after.EndsWith("\n", StringComparison.Ordinal),
+               "a file with no trailing newline does not gain one");
+
+            // Undo puts it back, byte for byte.
+            Ok(r.UndoDirectory != null, "an undo record was written");
+            ReplaceResult undone = Replacer.Undo(r.UndoDirectory);
+            Eq(undone.FilesWritten, 1, "undo restores the file");
+            Eq(File.ReadAllText(docPath), original, "undo restores the original exactly");
+
+            // Undo refuses a file edited since the replace, rather than
+            // overwriting work someone did in between.
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+            fh = FindOne(dir, "colour", "guide.md", false, false);
+            plans.Clear();
+            plans.Add(Replacer.Plan(fh, m, ro));
+            r = Replacer.Apply(plans, undo);
+            Eq(r.FilesWritten, 1, "the second run writes");
+            File.WriteAllText(docPath, "someone else edited this\r\n", new UTF8Encoding(false));
+            undone = Replacer.Undo(r.UndoDirectory);
+            Eq(undone.FilesWritten, 0, "undo does not restore over a later edit");
+            Eq(undone.Failures.Count, 1, "and says which file it left alone");
+            Eq(File.ReadAllText(docPath), "someone else edited this\r\n",
+               "the later edit is untouched");
+
+            // Only the selected changes are written.
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+            fh = FindOne(dir, "colour", "guide.md", false, false);
+            plan = Replacer.Plan(fh, m, ro);
+            plan.Changes[1].Selected = false;
+            plans.Clear();
+            plans.Add(plan);
+            r = Replacer.Apply(plans, undo);
+            Eq(r.ChangesWritten, 2, "an unchecked change is not counted");
+            Eq(File.ReadAllText(docPath),
+               "The color table\r\nColour is set per theme\r\n"
+               + "COLOR OVERRIDES\r\nunrelated trailing note",
+               "an unchecked change is not written");
+
+            // Three integrity checks stand between a stale plan and a write,
+            // and each is tested against the edit only it can catch. The
+            // planted-defect run is what showed that one test covering all
+            // three was really only exercising the first.
+
+            // 1. Different size. The cheapest check catches this.
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+            fh = FindOne(dir, "colour", "guide.md", false, false);
+            File.WriteAllText(docPath, original + "\r\nappended", new UTF8Encoding(false));
+            plan = Replacer.Plan(fh, m, ro);
+            Ok(plan.Refusal != null, "a file that changed size since the search is refused");
+
+            // 2. Same size, different timestamp, and the edit is confined to a
+            // line with no matches - so every matched line still verifies and
+            // the timestamp is the only thing left to notice.
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+            fh = FindOne(dir, "colour", "guide.md", false, false);
+            System.Threading.Thread.Sleep(20);
+            string elsewhere = original.Replace("unrelated trailing note",
+                                                "unrelated trailing NOTE");
+            Eq(elsewhere.Length, original.Length, "the fixture edit really is the same length");
+            File.WriteAllText(docPath, elsewhere, new UTF8Encoding(false));
+            plan = Replacer.Plan(fh, m, ro);
+            Ok(plan.Refusal != null, "an edit elsewhere in the file is refused too");
+
+            // 3. Same size AND same timestamp, which a restore or a coarse
+            // filesystem clock can produce. Only re-reading the line catches
+            // it, and it is the check that makes the other two advisory.
+            File.WriteAllText(docPath, original, new UTF8Encoding(false));
+            fh = FindOne(dir, "colour", "guide.md", false, false);
+            string forged = original.Replace("The colour table", "The colour TABLE");
+            Eq(forged.Length, original.Length, "the forged edit really is the same length");
+            File.WriteAllText(docPath, forged, new UTF8Encoding(false));
+            File.SetLastWriteTimeUtc(docPath, fh.LastWriteUtc);
+            plan = Replacer.Plan(fh, m, ro);
+            Ok(plan.Refusal != null,
+               "an edit that kept the size and the timestamp is caught by re-reading the line");
+
+            // Extracted and transformed files are refused, with their own
+            // reasons rather than a generic one.
+            string officePath = Path.Combine(dir, "book.xlsx");
+            File.WriteAllBytes(officePath, SampleWorkbook());
+            FileHits office = FindOne(dir, "decommission", "book.xlsx", false, false);
+            Ok(office != null, "the workbook is found");
+            plan = Replacer.Plan(office, new Matcher("decommission", false, false, false), ro);
+            Ok(plan.Refusal != null, "an extracted workbook is refused");
+            Ok(plan.Refusal.IndexOf("Office", StringComparison.Ordinal) >= 0,
+               "the refusal says it came from an Office file");
+
+            string ansiPath = Path.Combine(dir, "session.log");
+            File.WriteAllText(ansiPath, Esc + "[1;32mcolour" + Esc + "[0m here\r\n",
+                              new UTF8Encoding(false));
+            FileHits ansi = FindOne(dir, "colour", "session.log", true, false);
+            Ok(ansi != null, "the raw log is found with strip-ANSI on");
+            plan = Replacer.Plan(ansi, m, ro);
+            Ok(plan.Refusal != null, "a file whose escapes were stripped is refused");
+            Ok(plan.Refusal.IndexOf("Strip ANSI escapes", StringComparison.Ordinal) >= 0,
+               "the refusal names the option to turn off");
+
+            // The point of making Transformed conditional: a file with no
+            // escapes is untouched by the strip, so it stays replaceable even
+            // with the option on - which is the default.
+            FileHits clean = FindOne(dir, "colour", "guide.md", true, false);
+            Ok(clean != null, "a clean file is found with strip-ANSI on");
+            Ok(clean.IsSafeToRewrite,
+               "strip-ANSI does not make a file without escapes unreplaceable");
+
+            // An ANSI-encoded file cannot store an em dash, and losing the
+            // character silently is worse than refusing the file.
+            string ansiEncoded = Path.Combine(dir, "legacy.txt");
+            File.WriteAllBytes(ansiEncoded, new byte[] {
+                (byte)'c', (byte)'o', (byte)'l', (byte)'o', (byte)'u', (byte)'r',
+                (byte)' ', 0xE9, (byte)'\r', (byte)'\n' });
+            FileHits legacy = FindOne(dir, "colour", "legacy.txt", false, false);
+            Ok(legacy != null, "the ANSI file is found");
+            ReplaceOptions greek = new ReplaceOptions();
+            greek.Replacement = "χρωμα";   // a word in Greek
+            plans.Clear();
+            plans.Add(Replacer.Plan(legacy, m, greek));
+            r = Replacer.Apply(plans, undo);
+            Eq(r.FilesWritten, 0, "a replacement the encoding cannot store is not written");
+            Eq(r.Failures.Count, 1, "and it is reported");
+
+            // Regex mode substitutes groups.
+            string rePath = Path.Combine(dir, "ports.conf");
+            File.WriteAllText(rePath, "listen 9160\r\nlisten 9161\r\n", new UTF8Encoding(false));
+            FileHits ports = FindOne(dir, "listen ([0-9]+)", "ports.conf", false, true);
+            Ok(ports != null, "the regex search finds the file");
+            Matcher rx = new Matcher("listen ([0-9]+)", false, false, true);
+            ReplaceOptions groups = new ReplaceOptions();
+            groups.Replacement = "bind $1";
+            plans.Clear();
+            plans.Add(Replacer.Plan(ports, rx, groups));
+            r = Replacer.Apply(plans, undo);
+            Eq(File.ReadAllText(rePath), "bind 9160\r\nbind 9161\r\n",
+               "a regex group is substituted");
+
+            // A literal search must not treat $1 as a group reference. Someone
+            // replacing a price would be very surprised.
+            File.WriteAllText(rePath, "cost 5\r\n", new UTF8Encoding(false));
+            FileHits literal = FindOne(dir, "cost 5", "ports.conf", false, false);
+            Matcher lit = new Matcher("cost 5", false, false, false);
+            ReplaceOptions dollars = new ReplaceOptions();
+            dollars.Replacement = "$1 each";
+            plans.Clear();
+            plans.Add(Replacer.Plan(literal, lit, dollars));
+            r = Replacer.Apply(plans, undo);
+            Eq(File.ReadAllText(rePath), "$1 each\r\n",
+               "a literal replacement containing $1 is written as typed");
+
+            Directory.Delete(dir, true);
+        }
+        // charcheck:spelling-on
 
         static SearchOptions NewOptions(string root, string query)
         {

@@ -16,7 +16,7 @@ set "ROOT=%~dp0.."
 "%CSC%" /nologo /target:exe /optimize+ /out:"%~dp0EngineTests.exe" ^
     /r:System.Xml.dll /r:System.IO.Compression.dll ^
     "%ROOT%\Matching.cs" "%ROOT%\TextFiles.cs" "%ROOT%\OfficeText.cs" ^
-    "%ROOT%\FindEngine.cs" "%~dp0EngineTests.cs"
+    "%ROOT%\Replacer.cs" "%ROOT%\FindEngine.cs" "%~dp0EngineTests.cs"
 if errorlevel 1 (
     echo Build FAILED.
     exit /b 1
