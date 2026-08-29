@@ -1,0 +1,15 @@
+# Line endings are declared rather than left to the checkout, so a clone on a
+# different machine cannot produce launchers that fail to run.
+#
+# The suite rule forces LF on shell scripts because a Windows checkout otherwise
+# hands the container scripts it cannot execute. This project inverts for the
+# same reason: cmd.exe parses a .cmd file line by line and LF-only endings break
+# it in ways that look like a corrupt script rather than a checkout problem.
+
+* text=auto
+
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf
+
+*.png binary

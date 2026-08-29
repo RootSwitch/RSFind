@@ -1,0 +1,12 @@
+.claude/
+*.log
+
+# Build output. Build-RSFind.cmd regenerates it from the .cs sources.
+*.exe
+*.pdb
+
+# Distribution zip. tools\Make-Dist.ps1 regenerates it.
+dist/
+
+# Scratch corpora written by the test harness.
+testdata/
