@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RSFind: a magnifier over lines of text, in the family grammar - 64-unit tile
+  rx 12, 4 to 4.5 strokes, #262a33 ground, logo-a the lens and logo-b the text.
+
+  Static hex, deliberately. An SVG favicon is fetched as its own document and
+  cannot read the page that linked it, so following the active theme is not
+  something this declined to do - it is not possible. It does not answer
+  prefers-color-scheme either: a mark is an identity, and people find a tab by
+  its icon in a strip of thirty.
+
+  The lens is filled with the ground color before its rim is stroked, so the
+  rules stop at its edge rather than running through the glass. Keep this in
+  step with Brand.PaintMark in Controls.cs; they are the same drawing.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#262a33"/>
+
+  <g stroke="#2e9b57" stroke-width="4" stroke-linecap="round">
+    <line x1="12" y1="16" x2="46" y2="16"/>
+    <line x1="12" y1="28" x2="38" y2="28"/>
+    <line x1="12" y1="40" x2="30" y2="40"/>
+  </g>
+
+  <circle cx="39" cy="37" r="13" fill="#262a33"/>
+  <g stroke="#4c8bf5" stroke-width="4.5" fill="none" stroke-linecap="round">
+    <circle cx="39" cy="37" r="13"/>
+    <line x1="48" y1="46" x2="56" y2="54"/>
+  </g>
+</svg>

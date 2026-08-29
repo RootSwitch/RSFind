@@ -26,10 +26,19 @@ namespace RSFind
         {
             // A corpus under the repo rather than %TEMP%, so a failed run
             // leaves the evidence where the person debugging it will look.
+            //
+            // In its OWN named subdirectory, not testdata itself. The first
+            // version deleted the whole of testdata on the way in and on the
+            // way out, which is exactly the "establish a starting state by
+            // deleting everything" that the house rule forbids - and it took
+            // about an hour to bite, silently eating a sample corpus that was
+            // sitting beside it under the same parent.
             string root = Path.Combine(
-                Path.GetDirectoryName(Path.GetDirectoryName(
-                    System.Reflection.Assembly.GetExecutingAssembly().Location)),
-                "testdata");
+                Path.Combine(
+                    Path.GetDirectoryName(Path.GetDirectoryName(
+                        System.Reflection.Assembly.GetExecutingAssembly().Location)),
+                    "testdata"),
+                "engine-tests");
 
             try
             {
@@ -52,7 +61,8 @@ namespace RSFind
             }
             finally
             {
-                // Removes only what this run created, by name.
+                // Removes only this run's own directory, by name, leaving
+                // anything else under testdata alone.
                 try { if (Directory.Exists(root)) Directory.Delete(root, true); }
                 catch (IOException) { }
             }
