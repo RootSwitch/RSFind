@@ -133,6 +133,34 @@ hosts and addresses in them are invented - `LAB1` to `LAB6` on the RFC 5737
 documentation range - and that is a rule, not a convenience: no real hostname
 or address belongs in a tracked file, screenshots included.
 
+### Why the panels have no title bar
+
+They are the client area only, and the frame around them is drawn by the HTML.
+
+A window's title bar and border are not painted by the window on anything since
+Vista - the Desktop Window Manager composites them from a separate surface. A
+capture taken from inside the process therefore cannot see them.
+`Control.DrawToBitmap` sends `WM_PRINT`, which asks the window to draw a frame
+it does not own, and gets back the legacy `DefWindowProc` caption: the one that
+looks like Windows 7, in its inactive colors because an automated session has
+no foreground window for the form to become. `PrintWindow` with
+`PW_RENDERFULLCONTENT` returns a different wrong frame rather than a right one.
+
+The proof, if you want to repeat it: capture twice with
+`DWMWA_USE_IMMERSIVE_DARK_MODE` set to 1 and then 0. That attribute changes only
+the DWM frame. The two title bars come back byte-identical, so the capture is
+not seeing DWM at all.
+
+Cropping is also the better answer regardless of the mechanism. A real frame in
+a product shot varies with the Windows version, the accent color, and the light
+or dark setting of whatever machine took the picture, none of which are facts
+about RSFind.
+
+**To use real frames instead**, take four screenshots on an interactive desktop,
+drop them into `docs/src/panels/` under the same names, and re-render. Nothing
+else changes, and the HTML frame will simply sit behind a picture that already
+has one - remove the `box-shadow` ring in that case.
+
 **The social preview has to be uploaded through GitHub's repository settings.**
 Committing the file only versions it; it does not become the card. That upload
 is only possible once the repository is public.

@@ -4,18 +4,38 @@
 <meta charset="utf-8">
 <!-- Source for docs/hero-quadrants.png. Rendered by:
        powershell -File tools\Render-Png.ps1 -Html docs\src\hero.html `
-           -Out docs\hero-quadrants.png -Width 2000 -Height 1444
+           -Out docs\hero-quadrants.png -Width 2000 -Height 1392
      Composed as HTML rather than drawn, so a caption typo is a one-line fix and
      a re-render instead of an image edit. Colors are the Classic palette.
      Panel screenshots are real captures, kept in docs/src/panels, and each one
      shows a different thing the tool does rather than the same window in four
      colors. The hosts and addresses in them are invented: LAB1 to LAB6 on the
-     RFC 5737 documentation range. -->
+     RFC 5737 documentation range.
+
+     THE PANELS ARE CLIENT AREA ONLY, and the frame below is drawn here.
+
+     A window's title bar and border are not painted by the window on anything
+     since Vista; the Desktop Window Manager composites them from a separate
+     surface. A capture taken inside the process therefore cannot see them:
+     DrawToBitmap sends WM_PRINT, which asks the window to draw a frame it does
+     not own, and gets back the legacy DefWindowProc caption - the one that
+     looks like Windows 7, in its inactive colors because a headless session has
+     no foreground window. Flipping the dark-title-bar attribute between two
+     captures produced byte-identical title bars, which is the proof.
+
+     Cropping to the client area is also the better answer regardless. A real
+     frame in a product shot varies with the Windows version, the accent color,
+     and the light or dark setting of whatever machine took the picture, none of
+     which are facts about RSFind.
+
+     To use real frames instead, take four screenshots on an interactive
+     desktop, drop them into docs/src/panels under the same names, and
+     re-render. Nothing else changes. -->
 <style>
   html, body {
     margin: 0;
     width: 2000px;
-    height: 1444px;
+    height: 1392px;
     overflow: hidden;
     background: #1b1e25;
     font-family: "Segoe UI", system-ui, sans-serif;
@@ -23,11 +43,11 @@
   .grid {
     box-sizing: border-box;
     width: 2000px;
-    height: 1444px;
+    height: 1392px;
     padding: 56px;
     display: grid;
     grid-template-columns: 900px 900px;
-    grid-template-rows: 638px 638px;
+    grid-template-rows: 612px 612px;
     column-gap: 88px;
     row-gap: 56px;
   }
@@ -37,11 +57,15 @@
      reads as a mistake. */
   .cell img {
     width: 900px;
-    height: 584px;
+    height: 558px;
     display: block;
     border-radius: 8px;
     object-fit: cover;
     object-position: top left;
+    /* The frame the OS would have drawn. A mid-gray ring rather than a white
+       or black one, because three of these panels are dark and one is not. */
+    box-shadow: 0 0 0 1px rgba(128, 140, 160, 0.38),
+                0 14px 34px rgba(0, 0, 0, 0.5);
   }
   .cap {
     height: 40px;

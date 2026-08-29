@@ -53,15 +53,19 @@
   .right { position: relative; width: 620px; height: 640px; overflow: hidden; }
   /* A real capture, cropped rather than mocked up, and wide enough to bleed off
      the card edge instead of floating in the middle. */
+  /* Client area only, framed here. The title bar cannot be captured from
+     inside the process - see the note in hero.html - and a real one would vary
+     with the Windows version and accent color of whatever machine took it. */
   .shot {
     position: absolute;
-    top: 73px; left: 36px;
-    width: 760px; height: 493px;
+    top: 84px; left: 36px;
+    width: 760px; height: 471px;
     border-radius: 10px;
     overflow: hidden;
-    box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+    box-shadow: 0 0 0 1px rgba(128, 140, 160, 0.38),
+                0 18px 48px rgba(0, 0, 0, 0.55);
   }
-  .shot img { width: 760px; height: 493px; display: block; }
+  .shot img { width: 760px; height: 471px; display: block; }
 </style>
 </head>
 <body>

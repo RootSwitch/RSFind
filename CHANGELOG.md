@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**The screenshot panels are the client area only, framed by the HTML.** The
+first version carried a Windows 7 looking title bar in its inactive colors,
+which is not what the app looks like on any machine it runs on. A window's
+frame is composited by the Desktop Window Manager, not painted by the window,
+so a capture taken inside the process cannot see it: `DrawToBitmap` sends
+`WM_PRINT`, which asks the window for a frame it does not own and gets the
+legacy `DefWindowProc` caption back. Confirmed by flipping the dark-title-bar
+attribute between two captures and getting byte-identical title bars.
+
+Cropping is the better answer anyway. A real frame in a product shot varies
+with the Windows version, accent color, and light or dark setting of whatever
+machine took the picture, none of which are facts about RSFind.
+
 **Hero and social preview images, composed as HTML.** `docs/src/hero.html` and
 `docs/src/social.html` are rendered to PNG by `tools/Render-Png.ps1` using the
 headless Chrome or Edge already on the machine. The layout is text, so a
