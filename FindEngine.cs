@@ -97,6 +97,13 @@ namespace RSFind
         public bool Cancelled;
         public bool Finished;
         public TimeSpan Elapsed;
+
+        // Files that matched the mask but are in a format RSFind cannot read,
+        // and which extensions they were. Kept apart from FilesSkipped so the
+        // summary can name them: a folder of PDFs answering "no hits" is not
+        // an answer, it is a missing capability wearing one.
+        public int FilesUnsupported;
+        public string UnsupportedKinds = "";
     }
 
     public class SearchEngine
@@ -110,9 +117,11 @@ namespace RSFind
         int filesScanned;
         int filesSkipped;
         int filesMatched;
+        int filesUnsupported;
         int hits;
         int truncated;              // int rather than bool: written from many threads
 
+        readonly List<string> unsupportedKinds = new List<string>();
         readonly object callbackLock = new object();
 
         // Throws PatternError for a query the user typed wrong, which is the
@@ -200,6 +209,13 @@ namespace RSFind
             p.Cancelled = cancelled;
             p.Finished = finished;
             p.Elapsed = clock.Elapsed;
+            p.FilesUnsupported = Thread.VolatileRead(ref filesUnsupported);
+            lock (unsupportedKinds)
+            {
+                List<string> kinds = new List<string>(unsupportedKinds);
+                kinds.Sort(StringComparer.OrdinalIgnoreCase);
+                p.UnsupportedKinds = string.Join(", ", kinds.ToArray());
+            }
             return p;
         }
 
@@ -300,6 +316,22 @@ namespace RSFind
                 return null;
             }
 
+            // Formats a person would expect to be searched and this tool
+            // cannot read. Counted and named rather than folded into the skip
+            // total, because a .pdf sitting in the folder that quietly
+            // contributes nothing is how a user concludes the phrase is not
+            // there.
+            if (OfficeText.IsKnownUnreadable(path))
+            {
+                Interlocked.Increment(ref filesUnsupported);
+                lock (unsupportedKinds)
+                {
+                    string ext = Path.GetExtension(path).ToLowerInvariant();
+                    if (ext.Length > 0 && !unsupportedKinds.Contains(ext)) unsupportedKinds.Add(ext);
+                }
+                return null;
+            }
+
             byte[] bytes;
             try
             {
@@ -312,26 +344,62 @@ namespace RSFind
                 return null;
             }
 
-            TextContent content = TextFiles.ToLines(bytes, opts.ExcludeBinary, opts.StripAnsi);
-            if (content == null)
+            FileHits fh = new FileHits();
+            fh.Path = path;
+            fh.RelativePath = MakeRelative(opts.Root, path);
+            fh.Length = length;
+            fh.LastWriteUtc = writtenUtc;
+
+            string[] lines;
+            string[] locations = null;
+
+            if (OfficeText.IsSupported(path))
             {
-                Interlocked.Increment(ref filesSkipped);
-                return null;
+                // Office files have to be handled before the binary sniff, not
+                // after: a .xlsx is a zip, a zip is full of NUL bytes, and the
+                // sniff is right about that. Getting the order wrong means the
+                // exclude-binary default silently discards the one format this
+                // whole file exists to read.
+                string reason;
+                List<OfficeLine> extracted = OfficeText.Extract(bytes, path, out reason);
+                if (extracted == null)
+                {
+                    Interlocked.Increment(ref filesSkipped);
+                    if (reason != null) Report(onError, path, reason);
+                    return null;
+                }
+
+                lines = new string[extracted.Count];
+                locations = new string[extracted.Count];
+                for (int i = 0; i < extracted.Count; i++)
+                {
+                    lines[i] = extracted[i].Text;
+                    locations[i] = extracted[i].Location;
+                }
+
+                fh.EncodingName = "office xml";
+                fh.Newlines = NewlineStyle.None;
+                // Extracted text is not the bytes on disk under any reading,
+                // so a Replace could never write it back from these offsets.
+                fh.Transformed = true;
+            }
+            else
+            {
+                TextContent content = TextFiles.ToLines(bytes, opts.ExcludeBinary, opts.StripAnsi);
+                if (content == null)
+                {
+                    Interlocked.Increment(ref filesSkipped);
+                    return null;
+                }
+                fh.EncodingName = content.Encoding != null ? content.Encoding.WebName : "unknown";
+                fh.HasBom = content.HasBom;
+                fh.Newlines = content.Newlines;
+                fh.Transformed = content.Transformed;
+                lines = content.Lines;
             }
 
             Interlocked.Increment(ref filesScanned);
 
-            FileHits fh = new FileHits();
-            fh.Path = path;
-            fh.RelativePath = MakeRelative(opts.Root, path);
-            fh.EncodingName = content.Encoding != null ? content.Encoding.WebName : "unknown";
-            fh.HasBom = content.HasBom;
-            fh.Newlines = content.Newlines;
-            fh.Transformed = content.Transformed;
-            fh.Length = length;
-            fh.LastWriteUtc = writtenUtc;
-
-            string[] lines = content.Lines;
             for (int i = 0; i < lines.Length; i++)
             {
                 if ((i & 0x3FF) == 0) ct.ThrowIfCancellationRequested();
@@ -345,8 +413,23 @@ namespace RSFind
                     h.Line = line;
                     h.MatchStart = start;
                     h.MatchLength = len;
-                    if (opts.ContextBefore > 0) h.Before = Slice(lines, i - opts.ContextBefore, i);
-                    if (opts.ContextAfter > 0) h.After = Slice(lines, i + 1, i + 1 + opts.ContextAfter);
+                    if (locations != null)
+                    {
+                        // A location replaces the line number rather than
+                        // joining it: "line 47 of a workbook" is not a place
+                        // anyone can go, and Sheet1!B14 is one you can type
+                        // into the Name Box.
+                        h.Location = locations[i];
+                    }
+                    else
+                    {
+                        // Context is deliberately not offered for extracted
+                        // formats. The cell above a hit is not context in the
+                        // way the line above one is, and a paragraph's
+                        // neighbors are already whole thoughts.
+                        if (opts.ContextBefore > 0) h.Before = Slice(lines, i - opts.ContextBefore, i);
+                        if (opts.ContextAfter > 0) h.After = Slice(lines, i + 1, i + 1 + opts.ContextAfter);
+                    }
                     fh.Hits.Add(h);
 
                     if (fh.Hits.Count >= opts.MaxHitsPerFile)

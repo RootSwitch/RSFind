@@ -17,8 +17,10 @@ no network access at any point in the build. The script falls back to the
 32-bit compiler path if the 64-bit one is absent.
 
 The output is `RSFind.exe`, a few hundred KB, referencing only
-`System.Windows.Forms` and `System.Drawing` from the framework already
-installed.
+`System.Windows.Forms`, `System.Drawing`, `System.Xml`, and
+`System.IO.Compression` from the framework already installed. The last two are
+what read `.xlsx` and `.docx`; they have shipped in the box since .NET
+Framework 4.5.
 
 ### The one thing that will bite
 
@@ -90,13 +92,13 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 79 engine checks with the same in-box compiler, then the house
+Builds and runs 132 engine checks with the same in-box compiler, then the house
 style check. To confirm the checks can still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants nine defects into the copies one at a time, and
+That copies the tree, plants sixteen defects into the copies one at a time, and
 verifies that each is caught by the check that owns it. It never modifies the
 working files.

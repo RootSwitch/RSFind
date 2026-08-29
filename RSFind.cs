@@ -574,15 +574,28 @@ namespace RSFind
             sb.Append(p.FilesScanned.ToString("N0", CultureInfo.InvariantCulture));
             sb.Append(" searched)");
 
-            if (p.FilesSkipped > 0)
-            {
-                sb.Append(", ").Append(p.FilesSkipped.ToString("N0", CultureInfo.InvariantCulture));
-                sb.Append(" skipped");
-            }
+            // The timing belongs to the count, so it goes immediately after it.
+            // Everything below is a caveat, and caveats read as sentences.
             if (p.Finished)
             {
                 sb.Append(" in ").Append(((int)p.Elapsed.TotalMilliseconds)
                     .ToString("N0", CultureInfo.InvariantCulture)).Append(" ms");
+            }
+
+            if (p.FilesSkipped > 0)
+            {
+                sb.Append(". ").Append(p.FilesSkipped.ToString("N0", CultureInfo.InvariantCulture));
+                sb.Append(p.FilesSkipped == 1 ? " file skipped" : " files skipped");
+            }
+            // Named, not folded into the skip count. A folder of PDFs that
+            // answers "no hits" is not an answer; it is a missing capability
+            // wearing one.
+            if (p.FilesUnsupported > 0)
+            {
+                sb.Append(". ").Append(p.FilesUnsupported.ToString("N0", CultureInfo.InvariantCulture));
+                sb.Append(p.FilesUnsupported == 1 ? " file is in a format" : " files are in formats");
+                sb.Append(" RSFind cannot read");
+                if (p.UnsupportedKinds.Length > 0) sb.Append(" (").Append(p.UnsupportedKinds).Append(")");
             }
             // Both of these change what the numbers above mean, so neither is
             // allowed to be silent. A short list that does not say it is short
@@ -624,7 +637,7 @@ namespace RSFind
             string command = _settings.EditorCommand;
             try
             {
-                if (string.IsNullOrEmpty(command))
+                if (string.IsNullOrEmpty(command) || e.ShellOnly)
                 {
                     Process.Start(e.Path);   // whatever the shell associates
                     return;

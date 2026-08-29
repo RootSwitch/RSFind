@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Threading;
 
@@ -49,7 +50,10 @@ namespace RSFind
                 DecodeTests();
                 SplitTests();
                 AnsiTests();
+                WorkbookTests();
+                DocumentTests();
                 EngineTests_EndToEnd(root);
+                OfficeEndToEnd(root);
 
                 Console.WriteLine("PASS  " + checks + " checks");
                 return 0;
@@ -288,6 +292,216 @@ namespace RSFind
             Eq(TextFiles.StripAnsi("col1\tcol2"), "col1\tcol2", "tabs survive the strip");
         }
 
+        // ---- Office extraction -----------------------------------------------
+
+        // The fixtures are built with the same in-box zip writer the extractor
+        // reads with, rather than committed as binary blobs. A checked-in
+        // .xlsx is a file nobody can review in a diff, and one that drifts out
+        // of step with what the test claims it contains is worse than no test.
+        static byte[] Zip(params string[] namesAndContents)
+        {
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (ZipArchive zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                {
+                    for (int i = 0; i < namesAndContents.Length; i += 2)
+                    {
+                        ZipArchiveEntry e = zip.CreateEntry(namesAndContents[i]);
+                        using (StreamWriter w = new StreamWriter(e.Open(), new UTF8Encoding(false)))
+                            w.Write(namesAndContents[i + 1]);
+                    }
+                }
+                return ms.ToArray();
+            }
+        }
+
+        const string SheetNs = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        const string RelNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        const string WordNs = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+        static byte[] SampleWorkbook()
+        {
+            return Zip(
+                "xl/workbook.xml",
+                "<workbook xmlns=\"" + SheetNs + "\" xmlns:r=\"" + RelNs + "\">"
+                + "<sheets><sheet name=\"Rollout Plan\" sheetId=\"1\" r:id=\"rId1\"/>"
+                + "<sheet name=\"Notes\" sheetId=\"2\" r:id=\"rId2\"/></sheets></workbook>",
+
+                "xl/_rels/workbook.xml.rels",
+                "<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/>"
+                + "<Relationship Id=\"rId2\" Target=\"worksheets/sheet2.xml\"/></Relationships>",
+
+                "xl/sharedStrings.xml",
+                "<sst xmlns=\"" + SheetNs + "\">"
+                + "<si><t>decommission the array</t></si>"
+                + "<si><r><t>rich </t></r><r><t>text run</t></r></si>"
+                + "<si><t>phonetic</t><rPh><t>SHOULD NOT MATCH</t></rPh></si>"
+                + "</sst>",
+
+                "xl/worksheets/sheet1.xml",
+                "<worksheet xmlns=\"" + SheetNs + "\"><sheetData>"
+                + "<row r=\"14\"><c r=\"B14\" t=\"s\"><v>0</v></c>"
+                + "<c r=\"C14\"><v>4200</v></c></row>"
+                + "<row r=\"15\"><c r=\"B15\" t=\"s\"><v>1</v></c>"
+                + "<c r=\"C15\" t=\"inlineStr\"><is><t>inline value</t></is></c></row>"
+                + "<row r=\"16\"><c r=\"B16\" t=\"s\"><v>2</v></c>"
+                + "<c r=\"D16\"><f>SUM(C14:C15)</f><v>4200</v></c></row>"
+                // A formula with no cached result, which is what an
+                // uncalculated cell looks like. It is also the only shape that
+                // can betray a reader that has started treating <f> as a
+                // value: where a cached <v> exists it overwrites the formula
+                // and hides the mistake.
+                + "<row r=\"17\"><c r=\"B17\"><f>SUM(C14:C16)</f></c></row>"
+                + "</sheetData></worksheet>",
+
+                "xl/worksheets/sheet2.xml",
+                "<worksheet xmlns=\"" + SheetNs + "\"><sheetData>"
+                + "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>second sheet</t></is></c></row>"
+                + "</sheetData></worksheet>");
+        }
+
+        static void WorkbookTests()
+        {
+            string error;
+            List<OfficeLine> lines = OfficeText.Extract(SampleWorkbook(), "plan.xlsx", out error);
+            Ok(lines != null, "a workbook extracts");
+            Ok(error == null, "a good workbook reports no error");
+
+            Dictionary<string, string> byCell = new Dictionary<string, string>();
+            foreach (OfficeLine l in lines) byCell[l.Location] = l.Text;
+
+            Eq(byCell["Rollout Plan!B14"], "decommission the array",
+               "a shared string resolves through its index");
+            Eq(byCell["Rollout Plan!C14"], "4200", "a numeric cell is searchable as stored");
+            Eq(byCell["Rollout Plan!B15"], "rich text run",
+               "a rich text run is joined into one value");
+            Eq(byCell["Rollout Plan!C15"], "inline value", "an inline string is read");
+            Eq(byCell["Notes!A1"], "second sheet", "every sheet in the workbook is read");
+            Eq(byCell["Rollout Plan!B16"], "phonetic",
+               "a phonetic run is not appended to the value it annotates");
+
+            // The formula is skipped and its cached result kept, so searching
+            // for SUM does not answer with every totaled column in the book.
+            Eq(byCell["Rollout Plan!D16"], "4200", "a formula cell yields its result, not its formula");
+            Ok(!byCell.ContainsKey("Rollout Plan!B17"),
+               "an uncalculated formula cell contributes nothing");
+            foreach (OfficeLine l in lines)
+                Ok(l.Text.IndexOf("SUM(", StringComparison.Ordinal) < 0,
+                   "no extracted value contains the formula text");
+
+            // The sheet label comes from the workbook part through the
+            // relationship, not from the part filename.
+            Ok(!byCell.ContainsKey("sheet1!B14"), "sheets are labeled by name, not by part filename");
+
+            // A workbook with no usable workbook.xml still gives up its cells
+            // rather than returning nothing.
+            byte[] headless = Zip(
+                "xl/worksheets/sheet1.xml",
+                "<worksheet xmlns=\"" + SheetNs + "\"><sheetData>"
+                + "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>orphan</t></is></c></row>"
+                + "</sheetData></worksheet>");
+            lines = OfficeText.Extract(headless, "broken.xlsx", out error);
+            Eq(lines.Count, 1, "a workbook with no workbook part still yields its cells");
+            Eq(lines[0].Location, "sheet1!A1", "the fallback label is the part filename");
+
+            // A file that is not a zip is reported, not passed off as a file
+            // with no matches. That distinction is the whole point: silence
+            // reads as "the phrase is not there".
+            lines = OfficeText.Extract(Encoding.ASCII.GetBytes("not a zip at all"),
+                                       "fake.xlsx", out error);
+            Ok(lines == null, "a non-zip .xlsx does not extract");
+            Ok(error != null, "a non-zip .xlsx reports why");
+
+            // These files come from other people. An XML parser that expands
+            // entities turns a folder search into a file reader pointed
+            // wherever the document says, so the DTD is refused outright and
+            // the file is reported as unreadable rather than parsed partially.
+            byte[] withDtd = Zip(
+                "xl/workbook.xml",
+                "<workbook xmlns=\"" + SheetNs + "\" xmlns:r=\"" + RelNs + "\">"
+                + "<sheets><sheet name=\"S\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>",
+                "xl/_rels/workbook.xml.rels",
+                "<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/></Relationships>",
+                "xl/sharedStrings.xml",
+                "<!DOCTYPE sst [<!ENTITY leak \"ENTITY-WAS-EXPANDED\">]>"
+                + "<sst xmlns=\"" + SheetNs + "\"><si><t>&leak;</t></si></sst>",
+                "xl/worksheets/sheet1.xml",
+                "<worksheet xmlns=\"" + SheetNs + "\"><sheetData>"
+                + "<row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c></row></sheetData></worksheet>");
+
+            lines = OfficeText.Extract(withDtd, "hostile.xlsx", out error);
+            bool expanded = false;
+            if (lines != null)
+                foreach (OfficeLine l in lines)
+                    if (l.Text.IndexOf("ENTITY-WAS-EXPANDED", StringComparison.Ordinal) >= 0)
+                        expanded = true;
+            Ok(!expanded, "a DTD in an Office file is refused, not expanded");
+            Ok(error != null, "a file carrying a DTD is reported rather than passed over in silence");
+
+            Ok(OfficeText.IsSupported("a.xlsx"), ".xlsx is supported");
+            Ok(OfficeText.IsSupported("a.XLSM"), "the extension test is case-insensitive");
+            Ok(OfficeText.IsKnownUnreadable("a.pdf"), ".pdf is named as unreadable");
+            Ok(OfficeText.IsKnownUnreadable("a.xls"), ".xls is named as unreadable");
+            Ok(!OfficeText.IsKnownUnreadable("a.log"), "an ordinary log is not called unreadable");
+        }
+
+        static byte[] SampleDocument()
+        {
+            return Zip(
+                "word/document.xml",
+                "<w:document xmlns:w=\"" + WordNs + "\"><w:body>"
+                + "<w:p><w:r><w:t>The migration window is </w:t></w:r>"
+                + "<w:r><w:t>2026-09-14</w:t></w:r></w:p>"
+                + "<w:p><w:r><w:t>Column</w:t></w:r><w:r><w:tab/><w:t>Value</w:t></w:r></w:p>"
+                + "<w:p><w:del><w:r><w:t>retired paragraph</w:t></w:r></w:del></w:p>"
+                + "<w:p><w:r><w:t>kept</w:t></w:r>"
+                + "<w:del><w:r><w:t>REMOVED</w:t></w:r></w:del>"
+                + "<w:r><w:t> tail</w:t></w:r></w:p>"
+                + "</w:body></w:document>",
+
+                "word/header1.xml",
+                "<w:hdr xmlns:w=\"" + WordNs + "\">"
+                + "<w:p><w:r><w:t>CHANGE-2026-114</w:t></w:r></w:p></w:hdr>",
+
+                "word/footnotes.xml",
+                "<w:footnotes xmlns:w=\"" + WordNs + "\">"
+                + "<w:p><w:r><w:t>see the runbook</w:t></w:r></w:p></w:footnotes>");
+        }
+
+        static void DocumentTests()
+        {
+            string error;
+            List<OfficeLine> lines = OfficeText.Extract(SampleDocument(), "plan.docx", out error);
+            Ok(lines != null, "a document extracts");
+            Ok(error == null, "a good document reports no error");
+
+            Dictionary<string, string> byWhere = new Dictionary<string, string>();
+            foreach (OfficeLine l in lines) byWhere[l.Location] = l.Text;
+
+            // Runs are joined, which is what makes a phrase findable at all:
+            // Word splits a sentence across runs at every formatting change,
+            // so a naive per-run read cannot match across a bolded word.
+            Eq(byWhere["Paragraph 1"], "The migration window is 2026-09-14",
+               "runs in a paragraph are joined into one line");
+            Eq(byWhere["Paragraph 2"], "Column\tValue", "a tab element becomes a tab");
+
+            // A header is where a change number lives, and it is exactly what
+            // someone searches a folder of documents for.
+            Eq(byWhere["Header 1, paragraph 1"], "CHANGE-2026-114", "headers are searched");
+            Eq(byWhere["Footnote, paragraph 1"], "see the runbook", "footnotes are searched");
+
+            // Tracked deletions are not in the document any more.
+            foreach (OfficeLine l in lines)
+                Ok(l.Text.IndexOf("REMOVED", StringComparison.Ordinal) < 0,
+                   "text inside a tracked deletion is not extracted");
+            Ok(!byWhere.ContainsValue("retired paragraph"),
+               "a paragraph that is entirely a deletion produces no line");
+            Eq(byWhere["Paragraph 4"], "kept tail",
+               "a deletion inside a paragraph leaves the surviving text joined");
+        }
+
+        // ---- the engine, end to end ---------------------------------------
+
         // ---- the engine, end to end ---------------------------------------
 
         static void EngineTests_EndToEnd(string root)
@@ -396,6 +610,67 @@ namespace RSFind
                 delegate(string path, string message) { errors.Add(path); });
             Ok(errors.Count > 0, "an unreadable folder is reported through onError");
             Ok(bad.Finished, "the search still finishes after an unreadable folder");
+        }
+
+        // Office files going through the real engine, which is where the
+        // ordering trap lives: a .xlsx is a zip, a zip is full of NUL bytes,
+        // and the binary sniff is right about that. If the office branch runs
+        // after the sniff, the exclude-binary default silently discards the
+        // one format this feature exists to read.
+        static void OfficeEndToEnd(string root)
+        {
+            string dir = Path.Combine(root, "office");
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "rollout.xlsx"), SampleWorkbook());
+            File.WriteAllBytes(Path.Combine(dir, "runbook.docx"), SampleDocument());
+            File.WriteAllText(Path.Combine(dir, "notes.txt"), "decommission the array\r\n");
+            File.WriteAllBytes(Path.Combine(dir, "scan.pdf"), new byte[] { 0x25, 0x50, 0x44, 0x46 });
+
+            SearchOptions o = NewOptions(dir, "decommission");
+            Dictionary<string, FileHits> byName = new Dictionary<string, FileHits>();
+            SearchProgress p = RunSearch(o, byName);
+
+            Ok(byName.ContainsKey("rollout.xlsx"),
+               "a workbook is searched even though exclude-binary is on");
+            Eq(byName["rollout.xlsx"].Hits[0].Location, "Rollout Plan!B14",
+               "a workbook hit reports its cell, not a line number");
+            Ok(byName.ContainsKey("notes.txt"), "ordinary files are still searched alongside");
+            Eq(p.FilesMatched, 2, "both the workbook and the text file match");
+
+            // The PDF is counted and named rather than folded into the skip
+            // total. A folder of PDFs answering "no hits" is a missing
+            // capability wearing the clothes of an answer.
+            Eq(p.FilesUnsupported, 1, "an unreadable format is counted");
+            Eq(p.UnsupportedKinds, ".pdf", "the unreadable format is named");
+
+            o = NewOptions(dir, "migration window");
+            byName.Clear();
+            RunSearch(o, byName);
+            Ok(byName.ContainsKey("runbook.docx"),
+               "a phrase split across Word runs is still found");
+
+            o = NewOptions(dir, "CHANGE-2026-114");
+            byName.Clear();
+            RunSearch(o, byName);
+            Eq(byName["runbook.docx"].Hits[0].Location, "Header 1, paragraph 1",
+               "a hit in a header reports where it is");
+
+            // Context lines are meaningless for a cell and are not offered.
+            o = NewOptions(dir, "decommission");
+            o.ContextBefore = 2;
+            o.ContextAfter = 2;
+            byName.Clear();
+            RunSearch(o, byName);
+            Ok(byName["rollout.xlsx"].Hits[0].Before == null,
+               "a workbook hit carries no context lines");
+            Ok(byName["notes.txt"].Hits[0].Before != null,
+               "a text hit in the same run still carries context");
+
+            // Nothing extracted is safe to write back.
+            Ok(!byName["rollout.xlsx"].IsSafeToRewrite,
+               "an extracted workbook refuses to be rewritten");
+
+            Directory.Delete(dir, true);
         }
 
         static SearchOptions NewOptions(string root, string query)

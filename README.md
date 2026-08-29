@@ -21,6 +21,13 @@ Windows Search returns filenames and nothing else.
 - **Understands terminal logs.** Raw session logs carry ANSI escapes; RSFind
   strips them before matching, so a phrase that straddles a color code is still
   findable and the results read like the terminal did.
+- **Reads inside `.xlsx` and `.docx`**, with no Office install and no
+  dependency. A spreadsheet hit reports itself as `Schedule!A2` - a reference
+  you can paste into the Name Box - and a document hit as `Paragraph 1` or
+  `Header 1, paragraph 1`.
+- **Names the formats it cannot read** instead of returning nothing. A folder
+  of PDFs that answers "no hits" is a missing capability wearing the clothes of
+  an answer.
 - **Handles encodings that trip other tools.** UTF-8 with or without a BOM,
   UTF-16 and UTF-32 with one, and old ANSI exports, all in the same folder.
 - **Adds itself to the folder right-click menu**, per user, without admin.
@@ -76,6 +83,38 @@ what keeps that from becoming a memory problem. Whenever a cap bites, the
 summary line says so - a short list that does not admit it is short reads as
 "that is all there is", which is the one thing a search tool must never imply.
 
+## Office files
+
+`.xlsx`, `.xlsm`, `.docx`, and `.docm` are ZIP archives full of XML, and both a
+ZIP reader and an XML reader ship inside Windows. So this costs two in-box
+references rather than an Office install, an interop assembly, or a package you
+would have to trust.
+
+These files are handled *before* the binary check, not after - a workbook is a
+ZIP, a ZIP is full of NUL bytes, and the binary sniff is right about that. The
+order is what stops the exclude-binary default from silently discarding the one
+format this feature exists to read.
+
+What is worth knowing about what comes out:
+
+| | |
+|---|---|
+| Spreadsheet cells | Reported as `Sheet name!B14`. Shared strings, inline strings, numbers, and cached formula results are all searched. |
+| Formulas | **Not** searched. Searching them would answer `SUM` with every totaled column in the workbook. A formula cell yields its result; an uncalculated one yields nothing. |
+| Dates | Stored by Excel as serial numbers, and searched as stored. Searching for `2026-09-14` will not find a real date cell - search the text around it. |
+| Word paragraphs | Runs are joined first, so a phrase still matches when Word split it across runs at a formatting change. That splitting is why a naive reader cannot find a sentence containing one bolded word. |
+| Headers, footers, footnotes, endnotes, comments | All searched, and labeled. A change number or a classification marking usually lives in a header, and that is exactly what people search a folder of documents for. |
+| Tracked deletions | Skipped. Text inside a `w:del` is not in the document any more, and matching it reports a phrase that is not there when the file is opened. |
+| Context lines | Not offered for these formats. The cell above a hit is not context the way the line above one is. |
+
+Double-clicking one of these opens the file with its normal application, and
+ignores any editor command you have set - handing a workbook to a text editor
+with a `-n14` argument opens a ZIP as text at line 14.
+
+`.xls`, `.doc`, `.ppt`, `.pptx`, `.pdf`, `.rtf`, `.odt`, and `.ods` are **not**
+read. They are counted separately and named on the summary line, so the number
+you get back is never quietly incomplete.
+
 ## Opening a result
 
 Double-click a hit, or press Enter. By default the file opens with whatever
@@ -98,8 +137,9 @@ notepad++ {file} -n{line}
   set you are already looking at, with a per-file preview before anything is
   written. The engine already records the encoding, byte-order mark, and line
   ending of every file it reads so that a rewrite could be exact.
-- **No `.xls` or `.pdf`.** `.xlsx` and `.docx` support is planned; the older
-  binary formats are not.
+- **No `.xls`, `.doc`, or `.pdf`.** The modern zipped formats are read; the
+  older binary ones and PDF are not, and RSFind says so on the summary line
+  rather than letting them count as searched.
 - **No search history.** See above.
 
 ## Requirements

@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+**`.xlsx` and `.docx` are searched, with no dependency.** Both formats are a
+ZIP of XML and .NET Framework ships both readers in the box, so the one thing
+every grep-shaped tool declines to do costs two in-box references rather than
+an Office install or a package that has to be trusted. Spreadsheet hits report
+as `Schedule!A2` and document hits as `Header 1, paragraph 1`, because a line
+number in a workbook is not a place anyone can go.
+
+**Office files are handled before the binary sniff, not after.** A workbook is
+a ZIP, a ZIP is full of NUL bytes, and the sniff is right about that. With the
+branches in the other order, the exclude-binary default silently discards the
+one format the feature exists to read. There is a planted defect for this
+exact inversion.
+
+**Word runs are joined before matching.** Word splits a sentence across runs at
+every formatting change, so a per-run reader cannot match a phrase containing
+one bolded word - it finds nothing and looks like an answer.
+
+**Formulas are not searched, and tracked deletions are not extracted.**
+Searching formulas answers `SUM` with every totaled column in the workbook;
+matching deleted text reports a phrase that is not in the document when it is
+opened. Phonetic runs are skipped for the same reason - they would double every
+value in a Japanese workbook.
+
+**The XML readers refuse a DTD.** These files come from other people, and a
+parser that expands entities turns a folder search into a file reader pointed
+wherever the document says. `DtdProcessing.Prohibit` and a null resolver, with
+uncompressed-size bounds on every entry so a small archive cannot claim to hold
+a gigabyte.
+
+**Formats RSFind cannot read are counted and named, not skipped silently.**
+`.pdf`, `.xls`, `.doc`, and the rest now appear on the summary line as "1 file
+is in a format RSFind cannot read (.pdf)". A folder of PDFs answering "no hits"
+is a missing capability wearing the clothes of an answer.
+
+**The planted-defect harness handles multi-line plants.** Adding one for the
+formula guard surfaced something worth recording: two independent mechanisms
+keep formula text out, so neither single-line plant was caught. That is the
+property being guarded twice rather than a gap in the test, and the comment in
+the source now says which line is load-bearing and which is a fast-forward.
+
 **The search engine, with the guards that decide whether a search tool works
 at all.** A hand-rolled directory walk, file masks, a literal and regex
 matcher, a reader fanned out across the cores, and hits streamed through

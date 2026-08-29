@@ -13,9 +13,10 @@ if not exist "%CSC%" (
 rem Every reference below is an assembly already installed with the framework.
 rem Nothing here is restored, vendored, or downloaded.
 "%CSC%" /nologo /target:winexe /optimize+ /out:"%~dp0RSFind.exe" ^
-    /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.dll ^
+    /r:System.IO.Compression.dll ^
     "%~dp0Themes.cs" "%~dp0Native.cs" "%~dp0Controls.cs" ^
-    "%~dp0Matching.cs" "%~dp0TextFiles.cs" "%~dp0FindEngine.cs" ^
+    "%~dp0Matching.cs" "%~dp0TextFiles.cs" "%~dp0OfficeText.cs" "%~dp0FindEngine.cs" ^
     "%~dp0Settings.cs" "%~dp0ResultsView.cs" "%~dp0RSFind.cs"
 if errorlevel 1 (
     echo Build FAILED.

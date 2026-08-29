@@ -69,7 +69,60 @@ $plants = @(
        from = 'if (!Masks.Allows(Path.GetFileName(f), include, exclude)) continue;'
        to   = 'if (false) continue;'
        want = 'a mask that excludes every match returns nothing'
-       why  = 'the mask has to be applied during the walk, not just parsed' }
+       why  = 'the mask has to be applied during the walk, not just parsed' },
+
+    @{ file = 'FindEngine.cs'
+       from = 'if (OfficeText.IsSupported(path))'
+       to   = 'if (false)'
+       want = 'a workbook is searched even though exclude-binary is on'
+       why  = 'the office branch must run before the binary sniff, not after' },
+
+    @{ file = 'FindEngine.cs'
+       from = 'if (OfficeText.IsKnownUnreadable(path))'
+       to   = 'if (false)'
+       want = 'an unreadable format is counted'
+       why  = 'a .pdf contributing nothing silently reads as "the phrase is not there"' },
+
+    # This one has to span two lines, and finding that out was the useful part.
+    # Two independent things keep formula text out: only <v> and <is> are read,
+    # and <f> is skipped before either can see it. Disabling the Skip alone
+    # changes nothing, and adding <f> to the value reader alone is dead code
+    # behind the Skip. Neither single-line plant was caught, which is not a gap
+    # in the test - it is the property being guarded twice.
+    @{ file = 'OfficeText.cs'
+       from = @'
+                    if (r.LocalName == "f" && !r.IsEmptyElement) { Skip(r); continue; }
+                    if (r.LocalName == "v" && !r.IsEmptyElement) { v = ReadTextOf(r); continue; }
+'@
+       to   = @'
+                    if ((r.LocalName == "v" || r.LocalName == "f") && !r.IsEmptyElement) { v = ReadTextOf(r); continue; }
+'@
+       want = 'an uncalculated formula cell contributes nothing'
+       why  = 'searching formulas answers "SUM" with every totaled column in the book' },
+
+    @{ file = 'OfficeText.cs'
+       from = 'else if (r.LocalName == "rPh") inPhonetic = true;'
+       to   = 'else if (false) inPhonetic = true;'
+       want = 'a phonetic run is not appended to the value it annotates'
+       why  = 'phonetic hints would double every value in a Japanese workbook' },
+
+    @{ file = 'OfficeText.cs'
+       from = 'case "del":'
+       to   = 'case "del-disabled":'
+       want = 'text inside a tracked deletion is not extracted'
+       why  = 'matching deleted text reports a phrase that is not in the document' },
+
+    @{ file = 'OfficeText.cs'
+       from = 'if (type == "s")'
+       to   = 'if (false)'
+       want = 'a shared string resolves through its index'
+       why  = 'the shared string table is where almost every cell value lives' },
+
+    @{ file = 'OfficeText.cs'
+       from = 'settings.DtdProcessing = DtdProcessing.Prohibit;'
+       to   = 'settings.DtdProcessing = DtdProcessing.Parse;'
+       want = 'a DTD in an Office file is refused, not expanded'
+       why  = 'an XML parser that expands entities turns a file search into a file reader' }
 )
 
 $work = Join-Path $root 'testdata\plant'
@@ -81,13 +134,18 @@ foreach ($plant in $plants) {
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }
     New-Item -ItemType Directory -Force -Path $work | Out-Null
 
-    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'FindEngine.cs') {
+    foreach ($name in 'Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'FindEngine.cs') {
         Copy-Item (Join-Path $root $name) (Join-Path $work $name)
     }
     Copy-Item (Join-Path $root 'tools\EngineTests.cs') (Join-Path $work 'EngineTests.cs')
 
+    # Line endings are normalized on both sides before matching. A plant that
+    # spans two lines otherwise depends on how the repo happened to be checked
+    # out, and would report itself as MISSED on a machine where it is fine.
     $target = Join-Path $work $plant.file
-    $text = [IO.File]::ReadAllText($target)
+    $text = [IO.File]::ReadAllText($target).Replace("`r`n", "`n")
+    $plant.from = $plant.from.Replace("`r`n", "`n")
+    $plant.to = $plant.to.Replace("`r`n", "`n")
     if ($text.IndexOf($plant.from) -lt 0) {
         Write-Host ("[{0}] PLANT MISSED  {1}" -f $i, $plant.why) -ForegroundColor Yellow
         Write-Host ("    the source no longer contains: {0}" -f $plant.from)
@@ -102,9 +160,10 @@ foreach ($plant in $plants) {
     # exists to observe - a defect being caught would look like a script crash.
     $log = Join-Path $work 'out.txt'
     $exe = Join-Path $work 'Planted.exe'
-    $sources = @('Matching.cs', 'TextFiles.cs', 'FindEngine.cs', 'EngineTests.cs') |
+    $sources = @('Matching.cs', 'TextFiles.cs', 'OfficeText.cs', 'FindEngine.cs', 'EngineTests.cs') |
                ForEach-Object { '"' + (Join-Path $work $_) + '"' }
-    cmd /c ('"' + $csc + '" /nologo /target:exe /out:"' + $exe + '" ' +
+    cmd /c ('"' + $csc + '" /nologo /target:exe /r:System.Xml.dll ' +
+            '/r:System.IO.Compression.dll /out:"' + $exe + '" ' +
             ($sources -join ' ') + ' > "' + $log + '" 2>&1')
     if ($LASTEXITCODE -ne 0) {
         Write-Host ("[{0}] BUILD FAILED  {1}" -f $i, $plant.why) -ForegroundColor Yellow

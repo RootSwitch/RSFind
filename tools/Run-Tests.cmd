@@ -14,8 +14,9 @@ if not exist "%CSC%" (
 set "ROOT=%~dp0.."
 
 "%CSC%" /nologo /target:exe /optimize+ /out:"%~dp0EngineTests.exe" ^
-    "%ROOT%\Matching.cs" "%ROOT%\TextFiles.cs" "%ROOT%\FindEngine.cs" ^
-    "%~dp0EngineTests.cs"
+    /r:System.Xml.dll /r:System.IO.Compression.dll ^
+    "%ROOT%\Matching.cs" "%ROOT%\TextFiles.cs" "%ROOT%\OfficeText.cs" ^
+    "%ROOT%\FindEngine.cs" "%~dp0EngineTests.cs"
 if errorlevel 1 (
     echo Build FAILED.
     exit /b 1

@@ -341,11 +341,16 @@ namespace RSFind
 
             int x = bounds.X + Dpi.S(22);
 
-            // The line number, always dim, so the eye goes to the text. Not
+            // The gutter, always dim, so the eye goes to the text. Not
             // right-aligned into a column: that column would have to be as wide
-            // as the longest line number in the whole result set, which is not
-            // known until the scan ends.
-            string gutter = "Line " + lineNumber.ToString(CultureInfo.InvariantCulture) + ": ";
+            // as the longest entry in the whole result set, which is not known
+            // until the scan ends.
+            //
+            // Extracted formats carry a location instead of a line number,
+            // because "line 47 of a workbook" is not a place anyone can go.
+            string gutter = hit.Location != null
+                ? hit.Location + ": "
+                : "Line " + lineNumber.ToString(CultureInfo.InvariantCulture) + ": ";
             Rectangle rest = new Rectangle(x, bounds.Y, bounds.Right - x, bounds.Height);
             DrawRun(g, gutter, _mono, rest, t.TxtDim);
 
@@ -534,7 +539,8 @@ namespace RSFind
             if (OpenRequested == null) return;
             Hit hit = _files[row.File].Hits[row.Hit];
             OpenRequested(this, new OpenHitEventArgs(_files[row.File].Path,
-                                                     hit.LineNumber + row.Rel));
+                                                     hit.LineNumber + row.Rel,
+                                                     hit.Location != null));
         }
 
         // ---- copy and export ------------------------------------------------
@@ -567,11 +573,13 @@ namespace RSFind
             string text = row.Rel == 0 ? hit.Line
                         : row.Rel < 0 ? hit.Before[hit.Before.Length + row.Rel]
                         : hit.After[row.Rel - 1];
-            int n = hit.LineNumber + row.Rel;
+            string where = hit.Location != null
+                ? hit.Location
+                : (hit.LineNumber + row.Rel).ToString(CultureInfo.InvariantCulture);
             // Tab-separated so a paste into a spreadsheet or a diff lands in
             // columns, and prefixed with the path so a copied line still says
             // where it came from once it leaves the window.
-            return fh.RelativePath + "\t" + n.ToString(CultureInfo.InvariantCulture) + "\t" + text;
+            return fh.RelativePath + "\t" + where + "\t" + text;
         }
 
         public void CopySelection()
@@ -637,10 +645,16 @@ namespace RSFind
         public readonly string Path;
         public readonly int Line;
 
-        public OpenHitEventArgs(string path, int line)
+        // True for a hit in an extracted format. Handing a workbook to a text
+        // editor with a "-n14" argument opens a zip as text at line 14, which
+        // is worse than useless; these go to the shell association instead.
+        public readonly bool ShellOnly;
+
+        public OpenHitEventArgs(string path, int line, bool shellOnly)
         {
             Path = path;
             Line = line;
+            ShellOnly = shellOnly;
         }
     }
 }
