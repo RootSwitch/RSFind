@@ -117,10 +117,10 @@ you get back is never quietly incomplete.
 
 ## Replace
 
-Type a replacement, press **Preview**, and read what would change before
-anything is written. There is no way to replace without going through that
-window - the preview is not a confirmation step bolted on, it is the only path
-through the feature.
+Type a replacement, press **Replace...**, and read what would change before
+anything is written. The ellipsis is the promise: that button opens a preview
+rather than acting, and the preview is not a confirmation step bolted on - it
+is the only path through the feature.
 
 ![The replace preview, showing case preservation and a refused file](docs/replace.png)
 

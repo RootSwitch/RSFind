@@ -160,9 +160,21 @@ namespace RSFind
             _preserveCase = NewCheck("Preserve case");
             _preserveCase.Checked = true;
 
-            _preview = NewButton("Preview", false);
+            // "Replace..." rather than "Preview".
+            //
+            // Someone who has just typed a replacement goes looking for the
+            // verb they are about to perform, and a button labeled Preview
+            // reads as an optional extra sitting beside the real one - so they
+            // hunt for a Replace button that does not exist. The ellipsis is
+            // the standard promise that it opens something rather than acting,
+            // and what it opens is unmistakably a preview: the window is
+            // titled Preview Replace and its button says Apply.
+            _preview = NewButton("Replace...", false);
             _preview.Enabled = false;
             _preview.Click += delegate { PreviewReplace(); };
+
+            ToolTip tips = new ToolTip();
+            tips.SetToolTip(_preview, "Shows exactly what would change before anything is written");
 
             _matchCase = NewCheck("Match case");
             _wholeWord = NewCheck("Match whole word");
@@ -440,7 +452,11 @@ namespace RSFind
             // reason about than one that is simply inert until a search has
             // produced something to act on.
             Place(_replaceLabel, pad, y, rowH);
-            _preview.SetBounds(right - buttonW, y, buttonW, rowH);
+            // Directly under Find, not under Cancel. These are the two verbs
+            // the window offers and they belong in one column; Cancel belongs
+            // to the search that is running, and lining Replace up beneath it
+            // put the row's action in the row above's afterthought column.
+            _preview.SetBounds(_find.Left, y, buttonW, rowH);
             _preserveCase.SizeToText();
             _preserveCase.SetBounds(_preview.Left - gap - _preserveCase.Width, y,
                                     _preserveCase.Width, rowH);

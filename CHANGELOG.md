@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**The replace button is called Replace... rather than Preview, and sits under
+Find.** Reported from a full run through the tool: someone who has just typed a
+replacement goes looking for the verb they are about to perform, and a button
+labeled Preview reads as an optional extra beside the real one - so they hunt
+for a Replace button that is not there. The ellipsis is the standard promise
+that it opens something rather than acting, and what it opens is unmistakably a
+preview: the window is titled Preview Replace and its button says Apply.
+
+It also moved out of the Cancel column and into the Find column. Find and
+Replace are the two verbs the window offers and belong stacked together; Cancel
+belongs to the search that is running, and lining Replace up beneath it put the
+row's action in the row above's afterthought column.
+
 **Ctrl+F narrows the results.** A search across a folder of session logs
 answers with a thousand hits, and the next question is which of them came from
 one host. That is a question about the results, not a reason to search the disk
