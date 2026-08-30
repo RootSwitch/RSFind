@@ -171,6 +171,8 @@ would be a worse mistake than the one being undone.
   showing a sample and implying the rest was reviewed.
 - Files are written through a temporary file and swapped, so an interrupted
   write leaves the original intact rather than half a file.
+- The file comes back with its encoding, byte-order mark, and line endings
+  exactly as they were. Only the matched spans change.
 - In regex mode, `$1` and friends are substituted. In literal mode a
   replacement containing `$1` is written exactly as typed.
 

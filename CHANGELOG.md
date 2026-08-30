@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+**Every replace was silently stripping the byte-order mark.** Found by an
+external review, reproduced, and fixed.
+
+`DetectBom` built its encodings with the emit-a-mark flag off -
+`new UTF8Encoding(false)`, `new UnicodeEncoding(false, false)`, and so on. That
+flag is the only thing `GetPreamble()` reports, and the write path rebuilds a
+file as `GetPreamble()` + `GetBytes(text)`. So the branch that preserves the
+mark faithfully prepended nothing, on every BOM'd file, every time.
+
+For UTF-8 that is untidy. For UTF-16 and UTF-32 it destroys the file: the bytes
+survive but nothing can identify them any more, RSFind included - with no mark
+the binary sniff sees NUL bytes, correctly calls the file binary, and drops it
+from its own search. A second replace would then be refused as "this file looks
+binary".
+
+The verify-twice machinery, the temp-file swap, and the encoding round-trip
+guard all worked perfectly and then handed off to a write that corrupted the
+file anyway.
+
+It was invisible to the test suite because every fixture in the replace tests
+used `UTF8Encoding(false)` - no mark, so nothing to lose. There is now a
+round-trip case per mark shape, each asserting the preamble survives, the
+replacement applied, and - the assertion that matters - that the file is still
+findable afterwards. Plus a planted defect on the UTF-16 case, the shape where
+the consequence is destructive rather than cosmetic.
+
 **The screenshot panels are the client area only, framed by the HTML.** The
 first version carried a Windows 7 looking title bar in its inactive colors,
 which is not what the app looks like on any machine it runs on. A window's

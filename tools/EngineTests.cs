@@ -995,7 +995,60 @@ namespace RSFind
             Eq(File.ReadAllText(rePath), "$1 each\r\n",
                "a literal replacement containing $1 is written as typed");
 
+            BomRoundTrip(dir);
+
             Directory.Delete(dir, true);
+        }
+
+        // A replace must return the file with its byte-order mark intact.
+        //
+        // This is the check that was missing when a review found every mark
+        // being dropped on write. The whole replace fixture above uses
+        // UTF8Encoding(false) - no mark, so nothing to lose - and the bug was
+        // invisible to it. One case per mark shape, and the last assertion is
+        // the one that matters most: a file RSFind has rewritten must still be
+        // a file RSFind can find.
+        static void BomRoundTrip(string parent)
+        {
+            string dir = Path.Combine(parent, "bom");
+            Directory.CreateDirectory(dir);
+
+            BomCase(dir, "utf8.txt", new UTF8Encoding(true), "UTF-8");
+            BomCase(dir, "utf16le.txt", new UnicodeEncoding(false, true), "UTF-16LE");
+            BomCase(dir, "utf16be.txt", new UnicodeEncoding(true, true), "UTF-16BE");
+            BomCase(dir, "utf32le.txt", new UTF32Encoding(false, true), "UTF-32LE");
+        }
+
+        static void BomCase(string dir, string name, Encoding encoding, string label)
+        {
+            string path = Path.Combine(dir, name);
+            const string Original = "the colour table\r\nsecond line\r\n";
+            File.WriteAllText(path, Original, encoding);
+
+            FileHits fh = FindOne(dir, "colour", name, false, false);
+            Ok(fh != null, label + " is found before the replace");
+
+            ReplaceOptions o = new ReplaceOptions();
+            o.Replacement = "color";
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            plans.Add(Replacer.Plan(fh, new Matcher("colour", false, false, false), o));
+            ReplaceResult r = Replacer.Apply(plans, Path.Combine(dir, "undo"));
+            Eq(r.FilesWritten, 1, label + " is written");
+
+            byte[] preamble = encoding.GetPreamble();
+            byte[] after = File.ReadAllBytes(path);
+            bool kept = after.Length >= preamble.Length;
+            for (int i = 0; kept && i < preamble.Length; i++)
+                if (after[i] != preamble[i]) kept = false;
+            Ok(kept, label + " keeps its byte-order mark through a replace");
+
+            Eq(File.ReadAllText(path, encoding), "the color table\r\nsecond line\r\n",
+               label + " reads back with the replacement applied");
+
+            // The consequence that makes this more than tidiness. Without the
+            // mark, a UTF-16 file is all NUL bytes to the binary sniff.
+            Ok(FindOne(dir, "color", name, false, false) != null,
+               label + " is still findable after the replace");
         }
         // charcheck:spelling-on
 

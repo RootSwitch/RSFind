@@ -50,6 +50,21 @@ namespace RSFind
 
         // Looks for a byte-order mark. Returns null when there is none, which
         // is the common case for terminal logs.
+        //
+        // Every encoding here is built with its emit-a-mark flag ON, and that
+        // flag is load-bearing rather than cosmetic. It is the only thing
+        // GetPreamble() reports, and a Replace rebuilds the file as
+        // GetPreamble() + GetBytes(text). Built with the flag off - as these
+        // were until a review caught it - the preamble comes back empty and
+        // every mark is silently dropped on write. For UTF-8 that is untidy;
+        // for UTF-16 and UTF-32 it destroys the file, because nothing can tell
+        // what the bytes are afterwards. RSFind included: with no mark the
+        // binary sniff sees NUL bytes and correctly calls the file binary, so
+        // it drops out of its own search.
+        //
+        // The flag is safe on the decode side. It affects GetPreamble() alone -
+        // never GetBytes or GetString - and Decode skips the mark itself using
+        // bomLength rather than relying on the encoding to do it.
         public static Encoding DetectBom(byte[] bytes, out int bomLength)
         {
             bomLength = 0;
@@ -58,7 +73,7 @@ namespace RSFind
             if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
             {
                 bomLength = 3;
-                return new UTF8Encoding(false);
+                return new UTF8Encoding(true);
             }
             // The UTF-32 marks must be tested before the UTF-16 ones: FF FE is
             // a prefix of FF FE 00 00, so checking UTF-16 first decodes a
@@ -66,22 +81,22 @@ namespace RSFind
             if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
             {
                 bomLength = 4;
-                return new UTF32Encoding(false, false);
+                return new UTF32Encoding(false, true);
             }
             if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
             {
                 bomLength = 4;
-                return new UTF32Encoding(true, false);
+                return new UTF32Encoding(true, true);
             }
             if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
             {
                 bomLength = 2;
-                return new UnicodeEncoding(false, false);
+                return new UnicodeEncoding(false, true);
             }
             if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
             {
                 bomLength = 2;
-                return new UnicodeEncoding(true, false);
+                return new UnicodeEncoding(true, true);
             }
             return null;
         }

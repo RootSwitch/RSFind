@@ -29,6 +29,17 @@ $plants = @(
        want = 'UTF-16 with a BOM is text, not binary'
        why  = 'the binary sniff must consult the BOM before it counts NUL bytes' },
 
+    # The defect a review found: built with the emit-a-mark flag off, these
+    # encodings report an empty preamble and every replace silently drops the
+    # byte-order mark. One plant per shape would be redundant - they share the
+    # single mistake - so the UTF-16 one stands for all four, because it is the
+    # shape where the consequence is destructive rather than untidy.
+    @{ file = 'TextFiles.cs'
+       from = 'return new UnicodeEncoding(false, true);'
+       to   = 'return new UnicodeEncoding(false, false);'
+       want = 'UTF-16LE keeps its byte-order mark through a replace'
+       why  = 'a dropped mark leaves a UTF-16 file that nothing can identify, RSFind included' },
+
     @{ file = 'TextFiles.cs'
        from = 'UTF8Encoding strict = new UTF8Encoding(false, true);'
        to   = 'UTF8Encoding strict = new UTF8Encoding(false, false);'
