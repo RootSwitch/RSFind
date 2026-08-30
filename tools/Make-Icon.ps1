@@ -26,24 +26,25 @@
 # evidence behind it. The whole file is around 370 KB uncompressed, which is
 # nothing next to the exe it is stamped into.
 #
-# WHY IT DRAWS THE GROUND TILE AND Brand.CreateIcon DOES NOT
+# WHY THERE IS A GROUND TILE UNDER THE MARK
 #
 # favicon.svg opens with a 64-unit rounded rect at rx 12 in the ground color,
 # and PaintMark starts at the rules - so the two are the same drawing only from
-# the tile inward. That is not an oversight in either one. The lens is filled
-# with the ground color so the rules stop at the glass, which needs the ground
-# to be behind it; inside the app it always is, because the mark is painted
-# onto a panel already that color.
+# the tile inward. That is not an oversight in either. The lens is filled with
+# the ground so the rules stop at the glass rather than running through it,
+# which needs the ground to be behind it; inside the app it always is, because
+# the mark is painted onto a panel already that color.
 #
-# A file icon has no such luxury. It lands on Explorer's white, on a dark
-# taskbar, on whatever a shortcut sits over - and with no tile the filled lens
-# is a dark blob on an unknown background, invisible the moment that background
-# is also dark. So the tile is drawn here, which also makes this icon match
-# favicon.svg exactly rather than approximately.
+# An icon has no such luxury. It lands on Explorer's white, on a dark taskbar,
+# on whatever a shortcut sits over - and with no tile the filled lens is a dark
+# cutout on an unknown background, invisible the moment that background is also
+# dark. So the tile is drawn, which also makes the icon match favicon.svg
+# exactly rather than approximately.
 #
-# The app's own window icon (Brand.CreateIcon) still has no tile and so still
-# thins out against a dark taskbar. Fixing that means changing what the running
-# app looks like, which is a different decision from stamping the exe.
+# It is drawn by Brand.PaintTile, the app's own, rather than by geometry
+# restated here - the same reason this renders PaintMark instead of the SVG.
+# Brand.CreateIcon calls PaintTile too, so the window icon and the file icon
+# are one picture rather than two that have to be kept in step.
 #
 # WHY THE COLORS ARE CHECKED AGAINST favicon.svg RATHER THAN JUST TAKEN
 #
@@ -169,20 +170,6 @@ if (Compare-Object $inSvg $inTheme) {
            ($inSvg -join ' '), ($inTheme -join ' '))
 }
 
-# The 64-unit tile at rx 12, scaled. The rounded rect is the family grammar -
-# every tool in the set wears one - so it is drawn here rather than left to
-# whatever is behind the icon.
-function New-TilePath([single]$size) {
-    $r = 12.0 * ($size / 64.0)
-    $d = $r * 2.0
-    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $p.AddArc(0, 0, $d, $d, 180, 90)
-    $p.AddArc($size - $d, 0, $d, $d, 270, 90)
-    $p.AddArc($size - $d, $size - $d, $d, $d, 0, 90)
-    $p.AddArc(0, $size - $d, $d, $d, 90, 90)
-    $p.CloseFigure()
-    return $p
-}
 
 # One icon image, as the 32-bit bottom-up DIB an .ico entry expects: a 40-byte
 # BITMAPINFOHEADER whose height is doubled to cover the AND mask, then the BGRA
@@ -195,13 +182,8 @@ function New-IconDib([int]$px) {
         $g = [System.Drawing.Graphics]::FromImage($bmp)
         try {
             $g.Clear([System.Drawing.Color]::Transparent)
-            $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-            $tile = New-TilePath $px
-            try {
-                $fill = New-Object System.Drawing.SolidBrush($ground)
-                try { $g.FillPath($fill, $tile) } finally { $fill.Dispose() }
-            } finally { $tile.Dispose() }
             $rect = New-Object System.Drawing.Rectangle(0, 0, $px, $px)
+            $brand::PaintTile($g, $rect, $ground)
             $brand::PaintMark($g, $rect, $logoA, $logoB)
         } finally { $g.Dispose() }
 
@@ -256,6 +238,18 @@ $blank = @($entries | Where-Object { $_.Opaque -eq 0 })
 if ($blank.Count -gt 0) {
     throw ("PaintMark drew nothing at: {0}px - refusing to write a blank icon." -f
         (($blank | ForEach-Object { $_.Px }) -join ', '))
+}
+
+# The mark stands on a filled tile, so an icon that is mostly transparent means
+# the tile stopped being drawn. That failure is invisible in isolation - the
+# mark still looks like the mark - and only shows itself later as an icon that
+# dissolves into a dark taskbar. A stroke-only mark covers roughly a third of
+# the square; a tiled one covers everything but the rounded corners.
+$thin = @($entries | Where-Object { ($_.Opaque / $_.Total) -lt 0.9 })
+if ($thin.Count -gt 0) {
+    throw (("The ground tile is missing at {0}. Brand.PaintTile should fill all but " +
+            "the rounded corners; coverage this low is a mark drawn on nothing.") -f
+           (($thin | ForEach-Object { '{0}px ({1:P0})' -f $_.Px, ($_.Opaque / $_.Total) }) -join ', '))
 }
 
 # ICONDIR, then one 16-byte ICONDIRENTRY per image, then the images.

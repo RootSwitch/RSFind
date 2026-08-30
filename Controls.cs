@@ -834,6 +834,39 @@ namespace RSFind
             }
         }
 
+        // The ground tile every mark in the family stands on: the 64-unit square
+        // at rx 12 that favicon.svg opens with, scaled to whatever rectangle it
+        // is handed. The radius is a ratio of the rectangle rather than a grid
+        // constant, because the two apps do not agree on a grid - RSFind draws
+        // in 64ths and RSPaster in 16ths - while both marks sit on the same
+        // 64-unit tile in their favicons.
+        //
+        // It is deliberately NOT part of PaintMark. Inside the app the mark is
+        // painted onto a panel that is already this color, so a tile there
+        // would be a square of panel drawn on panel - and RSPaster's header
+        // paints the mark at 22x22 over exactly that. An ICON has no such
+        // backing. The filled shapes in these marks exist so the strokes stop
+        // at their edges rather than running through, which needs the ground
+        // behind them; without it they are dark cutouts on whatever the
+        // taskbar happens to be, and they vanish outright on a dark one.
+        //
+        // Matches the opening rect of favicon.svg; change both together.
+        public static void PaintTile(Graphics g, Rectangle r, Color ground)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float d = r.Width * (12f / 64f) * 2f;    // rx 12 on a 64-unit tile
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                using (SolidBrush fill = new SolidBrush(ground))
+                    g.FillPath(fill, path);
+            }
+        }
+
         // Bitmap.GetHicon() hands back a handle the Icon wrapper does not own,
         // so callers must DestroyIcon the previous one on every theme switch or
         // the process bleeds GDI handles.
@@ -844,7 +877,9 @@ namespace RSFind
                 using (Graphics g = Graphics.FromImage(bmp))
                 {
                     g.Clear(Color.Transparent);
-                    Brand.PaintMark(g, new Rectangle(0, 0, size, size), Th.T.LogoA, Th.T.LogoB);
+                    Rectangle box = new Rectangle(0, 0, size, size);
+                    Brand.PaintTile(g, box, Th.T.Panel);
+                    Brand.PaintMark(g, box, Th.T.LogoA, Th.T.LogoB);
                 }
                 handle = bmp.GetHicon();
                 return Icon.FromHandle(handle);
