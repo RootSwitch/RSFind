@@ -1051,8 +1051,54 @@ namespace RSFind
             CappedFileRefused(dir);
             FailedWriteKeepsTheFile(dir);
             ZeroWidthInserts(dir);
+            UndoRetention(dir);
 
             Directory.Delete(dir, true);
+        }
+
+        // Undo backups are bounded, and prune only what this code wrote.
+        static void UndoRetention(string parent)
+        {
+            string root = Path.Combine(parent, "retention");
+            Directory.CreateDirectory(root);
+
+            // Twelve completed runs, named the way Apply names them.
+            for (int i = 1; i <= 12; i++)
+            {
+                string run = Path.Combine(root, "202608" + i.ToString("00") + "-120000");
+                Directory.CreateDirectory(run);
+                File.WriteAllText(Path.Combine(run, "manifest.txt"), "x");
+                File.WriteAllText(Path.Combine(run, "0000.bak"), "original");
+            }
+            // Things this code did not write, which must survive.
+            string stray = Path.Combine(root, "notes-of-my-own");
+            Directory.CreateDirectory(stray);
+            File.WriteAllText(Path.Combine(stray, "keep.txt"), "mine");
+            string strayFile = Path.Combine(root, "readme.txt");
+            File.WriteAllText(strayFile, "mine too");
+
+            int removed = Replacer.PruneUndo(root, 10);
+            Eq(removed, 2, "pruning removes only the runs past the limit");
+
+            Ok(!Directory.Exists(Path.Combine(root, "20260801-120000")),
+               "the oldest run is gone");
+            Ok(!Directory.Exists(Path.Combine(root, "20260802-120000")),
+               "the next oldest is gone");
+            Ok(Directory.Exists(Path.Combine(root, "20260803-120000")),
+               "the eleventh-newest is kept");
+            Ok(Directory.Exists(Path.Combine(root, "20260812-120000")),
+               "the newest is kept");
+
+            // The blast radius rule: a directory without a manifest was not
+            // written by this code and is not this code's to delete.
+            Ok(Directory.Exists(stray), "a directory RSFind did not write is left alone");
+            Ok(File.Exists(strayFile), "a loose file in the undo folder is left alone");
+
+            Eq(Replacer.PruneUndo(Path.Combine(parent, "no-such-folder"), 10), 0,
+               "pruning a folder that does not exist is not an error");
+            Eq(Replacer.PruneUndo(root, 10), 0, "pruning again removes nothing");
+
+            Directory.Delete(root, true);
         }
 
         // A zero-width match must insert, not overwrite.

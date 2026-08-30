@@ -419,6 +419,10 @@ namespace RSFind
                     File.WriteAllLines(Path.Combine(undoDir, "manifest.txt"),
                                        manifest.ToArray(), new UTF8Encoding(false));
                     result.UndoDirectory = undoDir;
+                    // After the manifest, never before: a run is only prunable
+                    // once it is complete, and pruning first would count this
+                    // half-written one among the keepers.
+                    PruneUndo(undoRoot, MaxUndoRuns);
                 }
                 catch (IOException ex)
                 {
@@ -672,6 +676,56 @@ namespace RSFind
                 catch (UnauthorizedAccessException ex) { result.Failures.Add(target + ": " + ex.Message); }
             }
             return result;
+        }
+
+        // How many replace runs are kept.
+        //
+        // Ten is generous for the thing undo is actually for, which is almost
+        // always the run you just did. It is also the number that stops this
+        // folder being a growing archive of file contents nobody asked for -
+        // and that matters more than the disk space. RSFind makes a deliberate
+        // point of never writing down a search query, on the grounds that one
+        // is as likely to be a serial number or a password as a word; complete
+        // copies of the files those queries ran against are more sensitive than
+        // the queries, so keeping them forever, in a place the user was never
+        // told about, was the louder inconsistency.
+        public const int MaxUndoRuns = 10;
+
+        // Keeps the newest runs and removes the rest. Returns how many went.
+        //
+        // Only directories holding a manifest are touched - the ones this class
+        // wrote. Anything else a person has put under the undo folder is theirs
+        // and is left alone, which is the same rule the test suite follows about
+        // its own scratch directory.
+        public static int PruneUndo(string undoRoot, int keep)
+        {
+            if (keep < 0) keep = 0;
+            List<string> runs = new List<string>();
+            try
+            {
+                if (!Directory.Exists(undoRoot)) return 0;
+                foreach (string dir in Directory.GetDirectories(undoRoot))
+                    if (File.Exists(Path.Combine(dir, "manifest.txt"))) runs.Add(dir);
+            }
+            catch (IOException) { return 0; }
+            catch (UnauthorizedAccessException) { return 0; }
+
+            // The run directories are named yyyyMMdd-HHmmss, so sorting by name
+            // is sorting by time.
+            runs.Sort(StringComparer.OrdinalIgnoreCase);
+
+            int removed = 0;
+            for (int i = 0; i < runs.Count - keep; i++)
+            {
+                try
+                {
+                    Directory.Delete(runs[i], true);
+                    removed++;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return removed;
         }
 
         // The most recent run, or null. Used to offer Undo without making the

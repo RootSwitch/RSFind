@@ -84,6 +84,11 @@ namespace RSFind
             if (string.IsNullOrEmpty(folder)) folder = _settings.LastFolder;
             if (!string.IsNullOrEmpty(folder)) _folder.Text = folder;
 
+            // Also at startup, not only after a replace: a folder that grew
+            // before there was a retention rule would otherwise sit there until
+            // the next replace happened to trim it.
+            Replacer.PruneUndo(UndoRoot, Replacer.MaxUndoRuns);
+
             _pump = new System.Windows.Forms.Timer();
             _pump.Interval = 150;
             _pump.Tick += OnPump;
@@ -1121,7 +1126,12 @@ namespace RSFind
                 + "It builds no index, installs no service, and watches nothing in the "
                 + "background. It reads only the folder you point it at, and it never "
                 + "touches the network.\r\n\r\n"
-                + "Settings: " + Settings.FilePath,
+                + "Search queries are never written to disk.\r\n\r\n"
+                + "Settings: " + Settings.FilePath + "\r\n\r\n"
+                + "Replace keeps a copy of every file it changes, so a run can be "
+                + "undone. The last "
+                + Replacer.MaxUndoRuns.ToString(CultureInfo.InvariantCulture)
+                + " runs are kept and older ones are removed:\r\n" + UndoRoot,
                 "About RSFind", MessageBoxButtons.OK, MessageBoxIcon.None);
         }
 

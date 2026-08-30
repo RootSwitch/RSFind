@@ -165,6 +165,12 @@ before writing. **Menu > Undo Last Replace** puts them all back as a unit, and
 skips any file that has been edited since - restoring over someone's later work
 would be a worse mistake than the one being undone.
 
+**The last 10 runs are kept; older ones are removed** on startup and after each
+replace. That folder holds complete copies of files you have changed, which is
+more sensitive than the search queries this tool deliberately refuses to write
+down - so it is bounded, and its location is said out loud here and in the About
+box rather than left to be discovered.
+
 ### Limits
 
 - Runs are capped at 5,000 changes. Above that the preview stops being a

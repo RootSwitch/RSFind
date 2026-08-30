@@ -78,9 +78,19 @@ outside those two locations.
 **Before you delete `%APPDATA%\RSFind`, know what is in it.** Alongside
 `settings.ini` there is an `undo\` folder holding a copy of every file changed
 by a replace, one folder per run. That is the only record of what those files
-looked like beforehand. Nothing prunes it automatically - a tool that quietly
-deleted the evidence of its own writes would be making exactly the wrong
-tradeoff - so it is yours to clear out when you are satisfied with a change.
+looked like beforehand.
+
+**The last 10 runs are kept and older ones are removed**, on startup and after
+each replace. An earlier version of this document argued the opposite - that a
+tool quietly deleting the evidence of its own writes was making the wrong
+tradeoff - and a review pointed out the larger inconsistency: RSFind refuses to
+write down a search query because one may be a password, while keeping complete
+copies of the files those queries ran against, indefinitely, somewhere the user
+was never told about. Ten runs is far more than undo is ever used for, and the
+location is now stated in the About box and the README rather than only here.
+
+Pruning removes only directories holding a `manifest.txt`, which are the ones
+RSFind wrote. Anything else you put in that folder is left alone.
 
 ## What it does on a network
 
@@ -99,14 +109,14 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 274 engine checks with the same in-box compiler, then the house
+Builds and runs 283 engine checks with the same in-box compiler, then the house
 style check. To confirm the checks can still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants thirty-seven defects into the copies one at a time,
+That copies the tree, plants thirty-nine defects into the copies one at a time,
 and verifies that each is caught by the check that owns it. It never modifies
 the working files.
 

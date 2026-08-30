@@ -227,6 +227,18 @@ $plants = @(
        why  = 'the checkbox in the preview is the whole consent mechanism' },
 
     @{ file = 'Replacer.cs'
+       from = 'if (File.Exists(Path.Combine(dir, "manifest.txt"))) runs.Add(dir);'
+       to   = 'runs.Add(dir);'
+       want = 'pruning removes only the runs past the limit'
+       why  = 'pruning must remove only the runs this code wrote, not the folder it lives in' },
+
+    @{ file = 'Replacer.cs'
+       from = 'for (int i = 0; i < runs.Count - keep; i++)'
+       to   = 'for (int i = 0; i < runs.Count; i++)'
+       want = 'undo restores the file'
+       why  = 'a prune that keeps nothing throws away the undo the user is most likely to want' },
+
+    @{ file = 'Replacer.cs'
        from = 'if (now.Length != expectedLength || now.LastWriteTimeUtc.Ticks != expectedTicks)'
        to   = 'if (false)'
        want = 'undo does not restore over a later edit'

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+**Undo backups are bounded at the last 10 runs, and the folder is no longer a
+secret.** Nothing pruned them before: there was no retention limit, no cleanup,
+and no UI to clear them, and the only mention of the location was in DEPLOY.md.
+
+The disk growth was the smaller half. RSFind makes a deliberate point of never
+writing a search query down, on the grounds that one is as likely to be a serial
+number or a password as a word - while keeping complete copies of the files
+those queries ran against, indefinitely, in a place the user was never told
+about. That was the louder inconsistency, and a review named it.
+
+Pruning happens after each replace and again at startup, so a folder that grew
+before there was a rule does not wait for the next replace to be trimmed. It
+removes only directories holding a `manifest.txt` - the ones this code wrote -
+and leaves anything else in that folder alone, which is the same blast-radius
+rule the test suite follows about its own scratch directory. The location and
+the retention rule now appear in the About box and the README.
+
+This reverses an argument DEPLOY.md previously made, that a tool quietly
+deleting the evidence of its own writes would be making the wrong tradeoff.
+Bounded retention plus saying where it is beats both that and keeping
+everything forever.
+
 **Double-clicking a result no longer shell-executes it.** With no editor command
 set, opening a hit called `Process.Start` on the path, which uses the file's
 association - normally a text editor, because normally the file is a log. But
