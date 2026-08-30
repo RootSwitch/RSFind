@@ -57,6 +57,7 @@ namespace RSFind
                 FilterTests();
                 SortTests();
                 DetailTests();
+                WindowSizeTests();
                 LaunchTests();
                 CaseTests();
                 EngineTests_EndToEnd(root);
@@ -1506,6 +1507,42 @@ namespace RSFind
                "a missing sort key falls back");
             Eq(ViewRules.ParseSort("MODIFIED", ResultSort.Name), ResultSort.Modified,
                "the sort key is not case sensitive");
+        }
+
+        // ---- how big the window opens ---------------------------------------
+
+        static void WindowSizeTests()
+        {
+            // A big display leaves the wanted size alone.
+            Eq(ViewRules.ClampToWorkArea(1160, 3440, 60, 760), 1160,
+               "a display with room to spare returns the size asked for");
+            Eq(ViewRules.ClampToWorkArea(620, 1392, 60, 420), 620,
+               "and the same on the other axis");
+
+            // A 1366-wide laptop at 150%: the wanted width is 1740 against a
+            // desktop of 1366, which is the case this exists for.
+            Eq(ViewRules.ClampToWorkArea(1740, 1366, 90, 1140), 1276,
+               "a window wider than the desktop is brought back onto it");
+
+            // Exactly fitting is not clamped, and one pixel over is.
+            Eq(ViewRules.ClampToWorkArea(1306, 1366, 60, 760), 1306,
+               "a size that exactly fits the margin is left alone");
+            Eq(ViewRules.ClampToWorkArea(1307, 1366, 60, 760), 1306,
+               "a size one pixel over is pulled in");
+
+            // The minimum wins over the clamp. On a display too small to hold
+            // even the minimum, shrinking below it would produce a layout that
+            // cannot draw itself, so the window is allowed to overhang.
+            Eq(ViewRules.ClampToWorkArea(1160, 800, 60, 760), 1160,
+               "a display too small for the minimum does not shrink the window below it");
+            Eq(ViewRules.ClampToWorkArea(1160, 820, 60, 760), 1160,
+               "and the boundary case where the margin lands exactly on the minimum");
+            Eq(ViewRules.ClampToWorkArea(1160, 821, 60, 760), 761,
+               "one pixel more room and the clamp applies again");
+
+            // A size saved on a large monitor, reopened on a small one.
+            Eq(ViewRules.ClampToWorkArea(2400, 1920, 60, 760), 1860,
+               "a size saved on a bigger display is brought back onto this one");
         }
 
         // ---- what a file header shows ---------------------------------------

@@ -129,6 +129,27 @@ namespace RSFind
             return topIndex >= newCount;
         }
 
+        // How big a window is allowed to open, along one axis.
+        //
+        // A default size is only a good default on a display that can hold it.
+        // The window's own default is wide enough for the sort controls to sit
+        // on the options row, and at 150% on a 1366-wide laptop that figure is
+        // wider than the whole desktop - a window opening with its own controls
+        // off the edge of the screen is worse than one whose sort controls
+        // wrap. It catches the other direction too: a size saved on a large
+        // monitor and reopened on a small one.
+        //
+        // The minimum wins over the clamp. On a display small enough that even
+        // the minimum will not fit, the minimum is the honest answer and the
+        // window is allowed to be bigger than the desktop - shrinking below it
+        // would only produce a layout that cannot draw itself.
+        public static int ClampToWorkArea(int wanted, int available, int margin, int minimum)
+        {
+            int max = available - margin;
+            if (max <= minimum) return wanted;
+            return wanted > max ? max : wanted;
+        }
+
         // ---- ordering -------------------------------------------------------
 
         // Before this existed the pane had no order at all. Files were appended

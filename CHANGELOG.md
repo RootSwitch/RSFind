@@ -121,7 +121,29 @@ hits, row count, an active Ctrl+F filter and its visible count, and every
 collapse flag. Sorting an empty pane and sorting a single file both do nothing,
 rather than throwing.
 
-319 engine checks, 21 window checks, 44 planted defects.
+**The default window is wider, so the sort controls do not wrap on a fresh
+install.** Reported from a machine with no saved size, which is every first
+launch. Measured rather than estimated: the options row ends at 830 logical
+pixels and the sort label plus its two dropdowns need 1133, against a default of
+1000 - so they wrapped to a row of their own every time. The default is now
+1160, which leaves a little slack for a font that renders "Sort by" wider than
+this one does.
+
+That default is also clamped to the display now. At 150% on a 1366-wide laptop,
+1160 logical pixels is 1740 physical against a desktop of 1366, and a window
+that opens with its own controls off the edge of the screen is a worse outcome
+than one whose sort controls wrap. The same clamp catches a size saved on a
+large monitor and reopened on a small one, and it deliberately refuses to shrink
+below the minimum size: on a display that small the minimum is the honest answer
+and the window is allowed to overhang, because a layout narrower than its
+minimum cannot draw itself.
+
+The rule is a pure function in `ViewRules` rather than a screen measurement
+buried in the form, so its boundaries are tested - exactly fitting, one pixel
+over, and the two cases either side of the point where the margin lands on the
+minimum.
+
+328 engine checks, 21 window checks, 46 planted defects.
 
 ## 1.0.0 - 2026-08-30
 

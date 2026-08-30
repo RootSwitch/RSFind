@@ -77,8 +77,8 @@ namespace RSFind
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             MinimumSize = new Size(Dpi.S(760), Dpi.S(420));
-            ClientSize = new Size(
-                _settings.WindowWidth > 0 ? _settings.WindowWidth : Dpi.S(1000),
+            ClientSize = FitToScreen(
+                _settings.WindowWidth > 0 ? _settings.WindowWidth : DefaultWidth,
                 _settings.WindowHeight > 0 ? _settings.WindowHeight : Dpi.S(620));
             if (_settings.WindowMaximized) WindowState = FormWindowState.Maximized;
 
@@ -111,6 +111,30 @@ namespace RSFind
         }
 
         // ---- construction --------------------------------------------------
+
+        // Wide enough that the sort controls sit on the options row instead of
+        // wrapping to one of their own.
+        //
+        // Measured rather than guessed. The options row ends at 830 logical
+        // pixels and the label plus two dropdowns need 1133, so the old 1000
+        // put them on their own line on any machine with no saved size - which
+        // is every fresh install. The remaining slack is for a font that
+        // renders "Sort by" a shade wider than this one does.
+        static int DefaultWidth { get { return Dpi.S(1160); } }
+
+        // Keeps the opening size inside the display. The rule itself is in
+        // ViewRules.ClampToWorkArea, where it can be tested without a screen.
+        static Size FitToScreen(int width, int height)
+        {
+            Screen screen = Screen.PrimaryScreen;
+            if (screen == null) return new Size(width, height);
+
+            Rectangle work = screen.WorkingArea;
+            int margin = Dpi.S(60);
+            return new Size(
+                ViewRules.ClampToWorkArea(width, work.Width, margin, Dpi.S(760)),
+                ViewRules.ClampToWorkArea(height, work.Height, margin, Dpi.S(420)));
+        }
 
         void BuildControls()
         {

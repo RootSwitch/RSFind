@@ -351,7 +351,19 @@ $plants = @(
        from = 'if (utc == default(DateTime)) return "";'
        to   = 'if (false) return "";'
        want = 'a timestamp that was never set renders as nothing'
-       why  = 'an unset timestamp must not render as a plausible-looking year 1 date' }
+       why  = 'an unset timestamp must not render as a plausible-looking year 1 date' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'if (max <= minimum) return wanted;'
+       to   = 'if (false) return wanted;'
+       want = 'a display too small for the minimum does not shrink the window below it'
+       why  = 'clamping past the minimum produces a layout that cannot draw itself' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'return wanted > max ? max : wanted;'
+       to   = 'return wanted;'
+       want = 'a window wider than the desktop is brought back onto it'
+       why  = 'a window opening wider than the screen puts its own controls out of reach' }
 
     # There is no plant for "a list that grows is left alone". The obvious
     # guard for it was written, planted, and shown to be dead code: a valid top
