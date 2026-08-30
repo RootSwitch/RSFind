@@ -81,6 +81,15 @@ namespace RSFind
         public long Length;
         public DateTime LastWriteUtc;
 
+        // Both of these come off the same FileInfo the size and write time do,
+        // which fills from one directory query, so the second timestamp is
+        // free. Created is offered because it is asked for; it is worth knowing
+        // that on Windows it records when the file arrived at this path rather
+        // than when its contents were made. Copy a log off a device and its
+        // creation time is the moment it landed on your disk, routinely newer
+        // than the write time it carries.
+        public DateTime CreationUtc;
+
         // The first question Replace asks. It is necessary, not sufficient -
         // Replacer re-reads the file and re-verifies every line before it
         // writes anything.
@@ -352,11 +361,13 @@ namespace RSFind
 
             long length;
             DateTime writtenUtc;
+            DateTime createdUtc;
             try
             {
                 FileInfo fi = new FileInfo(path);
                 length = fi.Length;
                 writtenUtc = fi.LastWriteTimeUtc;
+                createdUtc = fi.CreationTimeUtc;
             }
             catch (Exception ex)
             {
@@ -404,6 +415,7 @@ namespace RSFind
             fh.RelativePath = MakeRelative(opts.Root, path);
             fh.Length = length;
             fh.LastWriteUtc = writtenUtc;
+            fh.CreationUtc = createdUtc;
 
             string[] lines;
             string[] locations = null;

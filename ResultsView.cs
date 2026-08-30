@@ -55,6 +55,14 @@ namespace RSFind
         // disk again.
         string _filter = "";
 
+        // How the file groups are ordered. Applied when a scan finishes rather
+        // than on every batch: results stream in, and re-sorting each time a
+        // handful of files arrive would shuffle rows under whoever is reading
+        // them. Completion is a boundary the reader already feels, because the
+        // summary line changes at the same moment.
+        ResultSort _sort = ResultSort.Name;
+        bool _sortDescending;
+
         Font _mono;
         Font _monoBold;
         double _cell = 8;   // width of one character cell, see ApplyFonts
@@ -209,6 +217,32 @@ namespace RSFind
                                            IntPtr.Zero, IntPtr.Zero);
         }
 
+        // Whether a row is selected, asked of the control rather than read off
+        // the owner-draw event.
+        //
+        // DrawListViewItemEventArgs.State is wrong in virtual mode. Not
+        // occasionally: select one line in a list of 300, scroll through it,
+        // and it claims Selected for every row it hands you - measured at 216
+        // wrong out of 216 painted, against a real selection of exactly one.
+        // The result on screen is that scrolling appears to select whatever it
+        // reveals, while Copy Selected correctly copies the one line that is
+        // actually selected, because only the painting was ever wrong.
+        //
+        // It is the framework rather than anything here: a bare ListView
+        // configured the same way reproduces it identically, with and without
+        // the double-buffering styles above.
+        //
+        // LVM_GETITEMSTATE asks the native control the same question and got
+        // it right for all 216. One message per painted row is nothing - only
+        // the rows on screen are ever painted.
+        bool IsSelected(int index)
+        {
+            if (!IsHandleCreated || index < 0) return false;
+            IntPtr state = Native.SendMessage(Handle, Native.LVM_GETITEMSTATE,
+                                              (IntPtr)index, (IntPtr)Native.LVIS_SELECTED);
+            return (state.ToInt32() & Native.LVIS_SELECTED) != 0;
+        }
+
         // Appends a batch. Batching is the caller's job because the engine
         // reports one file at a time from several threads at once, and a
         // VirtualListSize update per file makes the control redraw more often
@@ -228,6 +262,100 @@ namespace RSFind
         {
             for (int i = 0; i < _collapsed.Count; i++) _collapsed[i] = collapsed;
             Rebuild();
+        }
+
+        // ---- ordering -------------------------------------------------------
+
+        // Named SortKey rather than Sort because ListView already has a Sort()
+        // method. A property quietly hiding a base-class method is the kind of
+        // thing that compiles, warns once, and then confuses whoever reads it.
+        public ResultSort SortKey { get { return _sort; } }
+        public bool SortDescending { get { return _sortDescending; } }
+
+        // Raised so the window can persist the choice. The list owns the order;
+        // it does not own settings.ini.
+        public event EventHandler SortChanged;
+
+        public void SetSort(ResultSort key, bool descending, bool notify)
+        {
+            if (_sort == key && _sortDescending == descending) return;
+            _sort = key;
+            _sortDescending = descending;
+            ApplySort();
+            if (notify && SortChanged != null) SortChanged(this, EventArgs.Empty);
+        }
+
+        // Reorders the files and their collapse flags together.
+        //
+        // They are parallel lists indexed by file position, so permuting one
+        // without the other moves every group's expanded state onto a different
+        // file. That failure would not look like a sort bug - it looks like the
+        // triangles randomly forgetting themselves - which is why the
+        // permutation is built once and applied to both.
+        public void ApplySort()
+        {
+            if (_files.Count < 2) return;
+
+            // Whoever is mid-read stays where they are, by file rather than by
+            // row number: the row number means nothing after a reorder, and the
+            // file they were looking at is the thing they had in mind.
+            FileHits anchor = TopFile();
+
+            int[] order = new int[_files.Count];
+            for (int i = 0; i < order.Length; i++) order[i] = i;
+
+            ResultSort key = _sort;
+            bool descending = _sortDescending;
+            List<FileHits> files = _files;
+            Array.Sort(order, delegate(int x, int y)
+            {
+                return ViewRules.CompareFiles(key, descending, files[x], files[y]);
+            });
+
+            FileHits[] sortedFiles = new FileHits[order.Length];
+            bool[] sortedCollapsed = new bool[order.Length];
+            for (int i = 0; i < order.Length; i++)
+            {
+                sortedFiles[i] = _files[order[i]];
+                sortedCollapsed[i] = _collapsed[order[i]];
+            }
+            _files.Clear();
+            _files.AddRange(sortedFiles);
+            _collapsed.Clear();
+            _collapsed.AddRange(sortedCollapsed);
+
+            Rebuild();
+            ScrollToFile(anchor);
+        }
+
+        FileHits TopFile()
+        {
+            int top = TopIndex();
+            if (top < 0 || top >= _rows.Count) return null;
+            return _files[_rows[top].File];
+        }
+
+        void ScrollToFile(FileHits target)
+        {
+            if (target == null || _rows.Count == 0) return;
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                if (_rows[i].Kind != RowKind.File) continue;
+                if (!ReferenceEquals(_files[_rows[i].File], target)) continue;
+
+                // EnsureVisible scrolls the minimum distance, which would leave
+                // the anchor at the bottom of the viewport as often as the top.
+                // Reaching past it first and coming back puts it at the top,
+                // which is where it was.
+                BeginUpdate();
+                try
+                {
+                    EnsureVisible(_rows.Count - 1);
+                    EnsureVisible(i);
+                }
+                finally { EndUpdate(); }
+                return;
+            }
         }
 
         // What the filter matches, and why each half is there.
@@ -374,7 +502,7 @@ namespace RSFind
             Graphics g = e.Graphics;
             Rectangle bounds = e.Bounds;
 
-            bool selected = (e.State & ListViewItemStates.Selected) != 0;
+            bool selected = IsSelected(e.ItemIndex);
             Color back = row.Kind == RowKind.File ? t.Panel2 : t.Input;
             if (selected) back = Th.Mix(back, t.Accent, Focused ? 0.35 : 0.18);
             using (SolidBrush b = new SolidBrush(back))
@@ -420,7 +548,35 @@ namespace RSFind
             }
             x = bounds.X + DisclosureWidth;
 
-            Rectangle rest = new Rectangle(x, bounds.Y, bounds.Right - x - pad, bounds.Height);
+            // Modified date and size, held against the right edge rather than
+            // trailing the name.
+            //
+            // Lining them up is the point of putting them here at all. Someone
+            // who has just sorted by date reads the dates against each other,
+            // and dates that start wherever the filename happened to end have
+            // to be found before they can be compared. The size is padded into
+            // a fixed field for the same reason.
+            //
+            // Widths are computed from the character cell rather than measured,
+            // because the font is fixed-pitch and summing MeasureText across
+            // runs drifts a pixel or two per run - invisible on text, obvious
+            // on a column that is supposed to line up. Same reasoning as the
+            // match highlight.
+            //
+            // The column is always refitted to the client width, so the right
+            // edge here is the edge of the window rather than somewhere off the
+            // end of a horizontal scroll.
+            string meta = MetaFor(fh);
+            int metaWidth = meta.Length == 0 ? 0 : (int)Math.Ceiling(meta.Length * _cell);
+            int metaX = bounds.Right - pad - metaWidth;
+
+            // Too narrow to hold both and the metadata goes, rather than being
+            // painted over the filename. The name is the part nobody can work
+            // without.
+            bool room = metaWidth > 0 && metaX - Dpi.S(16) > x + Dpi.S(80);
+            int textRight = room ? metaX - Dpi.S(16) : bounds.Right - pad;
+
+            Rectangle rest = new Rectangle(x, bounds.Y, textRight - x, bounds.Height);
             x += DrawRun(g, fh.RelativePath, _monoBold, rest, t.Txt);
 
             int shown = VisibleIn(fh);
@@ -434,8 +590,26 @@ namespace RSFind
             tail.Append(shown == 1 && shown == fh.Hits.Count ? " hit" : " hits");
             if (fh.Truncated) tail.Append(", capped");
             tail.Append(')');
-            rest = new Rectangle(x, bounds.Y, bounds.Right - x - pad, bounds.Height);
+            rest = new Rectangle(x, bounds.Y, textRight - x, bounds.Height);
             DrawRun(g, tail.ToString(), _mono, rest, t.TxtDim);
+
+            if (room)
+            {
+                Rectangle metaRect = new Rectangle(metaX, bounds.Y, metaWidth, bounds.Height);
+                DrawRun(g, meta, _mono, metaRect, t.TxtDim);
+            }
+        }
+
+        // Widest the size can render is "1023.9 TB", nine cells. Padding to it
+        // is what turns two ragged fields into two columns.
+        const int SizeField = 9;
+
+        static string MetaFor(FileHits fh)
+        {
+            string when = ViewRules.FormatWhen(fh.LastWriteUtc);
+            string size = ViewRules.FormatSize(fh.Length);
+            if (when.Length == 0 && size.Length == 0) return "";
+            return when + "  " + size.PadLeft(SizeField);
         }
 
         void DrawLineRow(Graphics g, Rectangle bounds, int pad, Row row, Theme t)
@@ -822,11 +996,62 @@ namespace RSFind
                 if (FindRequested != null) FindRequested(this, EventArgs.Empty);
             });
             _menu.Items.Add(new ToolStripSeparator());
+            BuildSortMenu();
+            _menu.Items.Add(_sortMenu);
+            _menu.Items.Add(new ToolStripSeparator());
             Add(_menu, "Expand All", delegate { SetAllCollapsed(false); });
             Add(_menu, "Collapse All", delegate { SetAllCollapsed(true); });
 
-            _menu.Opening += delegate { MenuTheme.Apply(_menu); };
+            _menu.Opening += delegate
+            {
+                MarkSortMenu();
+                MenuTheme.Apply(_menu);
+            };
             ContextMenuStrip = _menu;
+        }
+
+        ToolStripMenuItem _sortMenu;
+
+        void BuildSortMenu()
+        {
+            _sortMenu = new ToolStripMenuItem("Sort by");
+            AddSort("Name", ResultSort.Name);
+            AddSort("Modified", ResultSort.Modified);
+            AddSort("Created", ResultSort.Created);
+            AddSort("Size", ResultSort.Size);
+            AddSort("Hit Count", ResultSort.Hits);
+            _sortMenu.DropDownItems.Add(new ToolStripSeparator());
+
+            // A direction toggle rather than ten items. "Newest first" is the
+            // one people want most of the time and it is the same key either
+            // way round, so pairing every key with its own reversed twin would
+            // double the menu to say one thing.
+            ToolStripMenuItem descending = new ToolStripMenuItem("Descending");
+            descending.Tag = DescendingTag;
+            descending.Click += delegate { SetSort(_sort, !_sortDescending, true); };
+            _sortMenu.DropDownItems.Add(descending);
+        }
+
+        const string DescendingTag = "descending";
+
+        void AddSort(string label, ResultSort key)
+        {
+            ToolStripMenuItem item = new ToolStripMenuItem(label);
+            ResultSort chosen = key;
+            item.Tag = key;
+            item.Click += delegate { SetSort(chosen, _sortDescending, true); };
+            _sortMenu.DropDownItems.Add(item);
+        }
+
+        void MarkSortMenu()
+        {
+            foreach (ToolStripItem raw in _sortMenu.DropDownItems)
+            {
+                ToolStripMenuItem item = raw as ToolStripMenuItem;
+                if (item == null) continue;
+                if (item.Tag is ResultSort) item.Checked = ((ResultSort)item.Tag) == _sort;
+                else if (DescendingTag.Equals(item.Tag)) item.Checked = _sortDescending;
+            }
         }
 
         static void Add(ContextMenuStrip menu, string text, EventHandler onClick)

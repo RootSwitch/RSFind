@@ -1,15 +1,21 @@
 // Presentation decisions that are pure functions, kept out of the controls so
 // they can be tested without a window.
 //
-// There is exactly one rule here so far, and it earned its place by being a
-// bug someone hit rather than a rule someone predicted.
+// Most of what is here earned its place by being a bug someone hit rather than
+// a rule someone predicted, which is why the comments are longer than the code.
 //
 // C# 5 only (in-box csc).
 
 using System;
+using System.Globalization;
 
 namespace RSFind
 {
+    // What the results pane orders files by. Every one of these is read off
+    // the FileHits the scan already produced, so none of them costs a second
+    // pass over the folder.
+    public enum ResultSort { Name, Modified, Created, Size, Hits }
+
     public static class ViewRules
     {
         static bool Contains(string haystack, string needle)
@@ -121,6 +127,141 @@ namespace RSFind
         public static bool NeedsScrollHome(int topIndex, int newCount)
         {
             return topIndex >= newCount;
+        }
+
+        // ---- ordering -------------------------------------------------------
+
+        // Before this existed the pane had no order at all. Files were appended
+        // in whatever sequence Parallel.ForEach finished them, which looks
+        // alphabetical - the walk hands paths out in directory order and most
+        // come back in roughly the order they went out - right up until it
+        // isn't, because one large file in the middle reorders everything
+        // behind it. Two runs over the same folder could disagree.
+        //
+        // So the first job of a sort here is to give the pane a defined order,
+        // and the second is to let someone pick which one.
+        public static int CompareFiles(ResultSort key, bool descending,
+                                       FileHits a, FileHits b)
+        {
+            if (a == null || b == null) return 0;
+
+            int c = CompareKey(key, a, b);
+            if (descending) c = -c;
+            if (c != 0) return c;
+
+            // The tie-break is NOT reversed along with the key. "Newest first"
+            // means newest first and then A to Z; files sharing a timestamp
+            // have expressed no opinion about each other, and flipping them
+            // too would make the second half of the order surprising.
+            //
+            // It has to be here at all because ties are the normal case, not
+            // the edge one. A folder pulled off a device in one copy carries
+            // one creation time across every file in it, and Array.Sort is not
+            // stable - without a total order those files would land in an
+            // arbitrary arrangement that changes between runs, which is the
+            // exact defect this feature exists to remove.
+            return ComparePath(a.RelativePath, b.RelativePath);
+        }
+
+        static int CompareKey(ResultSort key, FileHits a, FileHits b)
+        {
+            switch (key)
+            {
+                case ResultSort.Modified:
+                    return DateTime.Compare(a.LastWriteUtc, b.LastWriteUtc);
+                case ResultSort.Created:
+                    return DateTime.Compare(a.CreationUtc, b.CreationUtc);
+                case ResultSort.Size:
+                    return a.Length.CompareTo(b.Length);
+                case ResultSort.Hits:
+                    return HitCount(a).CompareTo(HitCount(b));
+                default:
+                    return ComparePath(a.RelativePath, b.RelativePath);
+            }
+        }
+
+        static int HitCount(FileHits f)
+        {
+            return f.Hits == null ? 0 : f.Hits.Count;
+        }
+
+        // Case-insensitive so the order reads the way a person would write it,
+        // then ordinal so that two names differing only in case still have an
+        // order. Windows will not hand you both in one folder, but a search
+        // spans subfolders and can.
+        public static int ComparePath(string a, string b)
+        {
+            int c = string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            if (c != 0) return c;
+            return string.CompareOrdinal(a, b);
+        }
+
+        // Stored in settings.ini as a word rather than a number, so the file
+        // stays something a person can read and edit.
+        public static string SortName(ResultSort key)
+        {
+            switch (key)
+            {
+                case ResultSort.Modified: return "modified";
+                case ResultSort.Created: return "created";
+                case ResultSort.Size: return "size";
+                case ResultSort.Hits: return "hits";
+                default: return "name";
+            }
+        }
+
+        public static ResultSort ParseSort(string text, ResultSort fallback)
+        {
+            if (string.IsNullOrEmpty(text)) return fallback;
+            switch (text.Trim().ToLowerInvariant())
+            {
+                case "modified": return ResultSort.Modified;
+                case "created": return ResultSort.Created;
+                case "size": return ResultSort.Size;
+                case "hits": return ResultSort.Hits;
+                case "name": return ResultSort.Name;
+                default: return fallback;
+            }
+        }
+
+        // ---- the detail shown on a file header ------------------------------
+
+        // Local time, not UTC. The timestamp is carried around in UTC so that
+        // comparing two of them is unambiguous, and a reader comparing one
+        // against their own memory of when they were on that box is not going
+        // to do the offset arithmetic. Getting this wrong would be quiet: the
+        // dates would look plausible and simply be a few hours off.
+        public static string FormatWhen(DateTime utc)
+        {
+            if (utc == default(DateTime)) return "";
+            DateTime local;
+            try { local = utc.ToLocalTime(); }
+            catch (ArgumentException) { return ""; }
+            return local.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        // Bytes below a kilobyte, one decimal above it. Invariant throughout,
+        // like every other number this program prints.
+        public static string FormatSize(long bytes)
+        {
+            if (bytes < 0) return "";
+            if (bytes < 1024)
+                return bytes.ToString(CultureInfo.InvariantCulture) + " B";
+
+            double v = bytes;
+            string[] units = { "KB", "MB", "GB", "TB" };
+            int u = -1;
+
+            // The promotion test is against 1023.95, not 1024, because the
+            // decision has to be made about the number that will be PRINTED
+            // rather than the one being carried. One byte under a megabyte is
+            // 1023.999 KB, which stays in KB against a 1024 test and then
+            // rounds to one decimal place for display - so a file reports as
+            // "1024.0 KB", a unit it was just decided not to be in.
+            do { v /= 1024.0; u++; }
+            while (v >= 1023.95 && u < units.Length - 1);
+
+            return v.ToString("0.0", CultureInfo.InvariantCulture) + " " + units[u];
         }
     }
 }

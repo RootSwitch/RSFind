@@ -17,7 +17,8 @@ document hits on Phosphor](docs/hero-quadrants.png)
 - **Searches file contents, right now.** No indexer to wait for, no catalog to
   go stale, no folders to opt in ahead of time.
 - **Groups hits by file**, collapsible, with the match highlighted in place and
-  optional context lines above and below.
+  optional context lines above and below, ordered by name or by modified date,
+  size, or hit count.
 - **Streams results as it goes**, with a Cancel button that actually stops the
   scan rather than hiding it.
 - **Understands terminal logs.** Raw session logs carry ANSI escapes; RSFind
@@ -231,6 +232,28 @@ focus into that list.
 A filter matching a **filename** keeps that file's hits whole, since the host
 is in the name rather than in any of the matched lines. A filter matching a
 **line** keeps that hit on its own.
+
+**Files are listed in a defined order**, by filename unless you say otherwise.
+**Right-click > Sort by** offers Modified, Created, Size, and Hit Count as well,
+with a Descending toggle for "newest first" and its relatives. The choice is
+remembered.
+
+Hit Count is the one worth knowing about: it answers "which of these files
+actually discusses this" rather than "which of them mentions it once".
+
+Created is offered because people ask for it, and it is worth knowing what
+Windows means by it. It records when the file arrived at that path, not when
+its contents were made - copy a log off a device and its creation date is the
+day it landed on your disk, routinely *newer* than the date it was written.
+Modified is almost always the one that answers the question.
+
+The order is applied when a scan finishes rather than while results stream in,
+so rows do not rearrange themselves under you while you are reading them.
+
+**Each file's header shows its modified date and size**, held against the right
+edge rather than trailing the filename, so they line up into a column you can
+read down. Dates that start wherever the previous filename happened to end have
+to be found before they can be compared.
 
 **Right-click** the results for Copy Selected, Copy All Results, Copy Path,
 Open Containing Folder, Find in Results, and Expand or Collapse All. Copy All

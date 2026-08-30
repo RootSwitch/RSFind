@@ -1,5 +1,93 @@
 # Changelog
 
+## Unreleased
+
+**Scrolling appeared to select every line it revealed.** Click one line, scroll,
+and everything coming into view rendered as though it were selected too.
+Reported from use.
+
+Only the painting was ever wrong - Copy Selected always copied the one line that
+was really selected - which is what made it confusing rather than alarming.
+`DrawListViewItemEventArgs.State` is not usable in virtual mode. Not
+occasionally: a bare ListView configured the same way was measured claiming
+Selected for **216 of 216** painted rows against a real selection of exactly
+one, and reporting 16 rows selected on a list where nothing had ever been
+clicked.
+
+The double-buffering styles on the control were the obvious suspect and were
+measured too, with and without: identical results either way, so they were left
+alone rather than changed on suspicion. `LVM_GETITEMSTATE` asks the native
+control the same question and got all 216 right, so that is what the painter
+uses now. One message per painted row, and only rows on screen are painted.
+
+**The results pane can be sorted, and had no defined order before.** Files were
+appended in whatever sequence the workers finished them. That looks
+alphabetical - the walk hands paths out in directory order and most come back
+in roughly the order they went out - right until one large file in the middle
+reorders everything behind it, so two runs over the same folder could disagree.
+
+**Right-click > Sort by** now offers Name, Modified, Created, Size, and Hit
+Count, with a Descending toggle, remembered in `settings.ini`. Every key is read
+off data the scan already collected, so none of them costs a second pass;
+`Created` is the only new field, and it comes from the `FileInfo` that was
+already being constructed for the size and write time.
+
+Two decisions inside it are worth recording. Ties fall back to the filename,
+because ties are the normal case rather than the edge one - a folder copied off
+a device in one go carries one timestamp across every file in it, and without a
+total order those files land differently on every run, which is the exact
+nondeterminism the feature exists to remove. And that tie-break is not reversed
+along with the key: "newest first" means newest first and then A to Z, because
+files sharing a timestamp have expressed no opinion about each other.
+
+The order is applied when a scan finishes rather than on every batch. Results
+stream in, and re-sorting each time a handful of files arrive would shuffle rows
+under whoever is reading them; completion is a boundary the reader already
+feels, because the summary line stops moving at the same moment. Whoever is
+mid-read keeps their place by file rather than by row number, the row number
+having stopped meaning anything.
+
+**Each file header now carries its modified date and size**, right-aligned so
+they form a column rather than starting wherever the filename ended. Someone who
+has just sorted by date is going to read the dates against each other. Widths
+come from character-cell arithmetic rather than `MeasureText`, for the same
+reason the match highlight does.
+
+**A second test suite, for the things that need a window.** Everything else runs
+without one on purpose, but the results pane has now produced two bugs that no
+pure test could catch - this selection state and, earlier, a scroll offset left
+pointing past the end of the data. Both were found by someone using the tool.
+`tools\ViewTests.cs` opens a real form, renders the control, and counts the rows
+actually painted with a selection background rather than trusting the event
+argument that was wrong in the first place.
+
+It also covers the trap the new sort had to avoid: the files and their collapse
+flags are parallel lists, so permuting one without the other lands every group's
+expanded state on a different file - a failure that looks like the disclosure
+triangles randomly forgetting themselves rather than like a sort bug. Made
+observable by giving two files different hit counts, so collapsing one removes a
+known number of rows.
+
+Its first version posted a real `WM_LBUTTONDOWN` to collapse a group and hung
+the suite instead of failing it, because a native ListView answers a button-down
+by entering a modal loop that waits for a physical button release. It invokes
+the handler directly now. A test that can hang is worse than no test.
+
+**A check that passed by luck, found by planting its own defect.** The tie-break
+test asserted one fixed input and still passed with the tie-break removed:
+`Array.Sort` with an all-equal comparison is free to arrange three elements
+however it likes, and on this runtime it reverses them, which happened to be the
+alphabetical answer the test wanted. It now asserts the same result from two
+opposite arrival orders, which is a statement about the rule rather than about
+the sort's internals.
+
+**`FormatSize` reported "1024.0 KB".** One byte under a megabyte is 1023.999 KB,
+which stays in KB against a `>= 1024` promotion test and then rounds to one
+decimal for display - a unit it had just been decided not to be in. The test is
+against the number that gets printed.
+
+319 engine checks, 11 window checks, 44 planted defects.
+
 ## 1.0.0 - 2026-08-30
 
 **`tools\Make-Dist.ps1` builds the release zip**, rebuilding the exe first

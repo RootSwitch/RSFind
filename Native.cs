@@ -47,6 +47,12 @@ namespace RSFind
         public const int LVM_FIRST = 0x1000;
         public const int LVM_GETTOPINDEX = LVM_FIRST + 39;
 
+        // Asked once per painted row, because the selection state the
+        // owner-draw event carries is not usable in virtual mode. See
+        // ResultsView.IsSelected.
+        public const int LVM_GETITEMSTATE = LVM_FIRST + 44;
+        public const int LVIS_SELECTED = 0x0002;
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 

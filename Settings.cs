@@ -57,6 +57,11 @@ namespace RSFind
         // The same $EDITOR-shaped thinking as RSMultiTerm's Edit Locally.
         public string EditorCommand = "";
 
+        // How the results pane orders file groups. Stored as a word so the
+        // file stays readable: name, modified, created, size, hits.
+        public string SortKey = "name";
+        public bool SortDescending;
+
         public int WindowWidth;
         public int WindowHeight;
         public bool WindowMaximized;
@@ -106,6 +111,8 @@ namespace RSFind
             s.ContextBefore = Int(kv, "contextBefore", s.ContextBefore, 0, 20);
             s.ContextAfter = Int(kv, "contextAfter", s.ContextAfter, 0, 20);
             s.EditorCommand = Str(kv, "editorCommand", s.EditorCommand);
+            s.SortKey = Str(kv, "sortKey", s.SortKey);
+            s.SortDescending = Bool(kv, "sortDescending", s.SortDescending);
             s.WindowWidth = Int(kv, "windowWidth", 0, 0, 20000);
             s.WindowHeight = Int(kv, "windowHeight", 0, 0, 20000);
             s.WindowMaximized = Bool(kv, "windowMaximized", s.WindowMaximized);
@@ -133,6 +140,8 @@ namespace RSFind
                 Write(sb, "contextBefore", ContextBefore.ToString(CultureInfo.InvariantCulture));
                 Write(sb, "contextAfter", ContextAfter.ToString(CultureInfo.InvariantCulture));
                 Write(sb, "editorCommand", EditorCommand);
+                Write(sb, "sortKey", SortKey);
+                Write(sb, "sortDescending", SortDescending ? "true" : "false");
                 Write(sb, "windowWidth", WindowWidth.ToString(CultureInfo.InvariantCulture));
                 Write(sb, "windowHeight", WindowHeight.ToString(CultureInfo.InvariantCulture));
                 Write(sb, "windowMaximized", WindowMaximized ? "true" : "false");

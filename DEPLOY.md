@@ -181,16 +181,25 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 283 engine checks with the same in-box compiler, then the house
-style check. To confirm the checks can still fail after a refactor:
+Builds and runs 319 engine checks with the same in-box compiler, then 11 checks
+that need a real window, then the house style check. To confirm the checks can
+still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants thirty-nine defects into the copies one at a time,
+That copies the tree, plants forty-four defects into the copies one at a time,
 and verifies that each is caught by the check that owns it. It never modifies
 the working files.
+
+**The window checks need an interactive desktop.** `tools\ViewTests.cs` opens a
+real form for a moment, and will fail in a headless session rather than being
+skipped. It exists because the results pane has produced two bugs that no pure
+test could have caught - a scroll offset left pointing past the end of the data,
+and a selection state the framework reports incorrectly - and both live in the
+space between this code and the native control, which only a real control can
+answer for. Both were reported by someone using the tool, not by the suite.
 
 ## Packaging a release
 

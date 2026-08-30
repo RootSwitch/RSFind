@@ -46,6 +46,30 @@ del "%SENTINEL%"
 rem Leave testdata itself alone if anything else is in it.
 rmdir "%ROOT%\testdata" 2>nul
 
+rem The window tests. Everything above runs without a window on purpose, but
+rem the results pane has produced two bugs that no pure test could catch - a
+rem scroll offset left pointing past the end of the data, and a selection state
+rem the framework reports wrongly. Both live between this code and the native
+rem control, and only a real control answers for that. Needs an interactive
+rem desktop; it opens a window briefly.
+"%CSC%" /nologo /target:exe /optimize+ /out:"%~dp0ViewTests.exe" ^
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
+    /r:System.Xml.dll /r:System.IO.Compression.dll ^
+    "%ROOT%\Themes.cs" "%ROOT%\Native.cs" "%ROOT%\Controls.cs" ^
+    "%ROOT%\Matching.cs" "%ROOT%\TextFiles.cs" "%ROOT%\OfficeText.cs" ^
+    "%ROOT%\Replacer.cs" "%ROOT%\FindEngine.cs" "%ROOT%\ViewRules.cs" ^
+    "%ROOT%\ResultsView.cs" "%~dp0ViewTests.cs"
+if errorlevel 1 (
+    echo Build FAILED.
+    exit /b 1
+)
+
+"%~dp0ViewTests.exe"
+if errorlevel 1 (
+    echo View tests FAILED.
+    exit /b 1
+)
+
 call "%~dp0charcheck.cmd"
 if errorlevel 1 exit /b 1
 

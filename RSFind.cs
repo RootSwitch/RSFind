@@ -116,6 +116,7 @@ namespace RSFind
             _results.Dock = DockStyle.Fill;
             _results.OpenRequested += OnOpenRequested;
             _results.FindRequested += delegate { ShowFilter(); };
+            _results.SortChanged += delegate { SaveSettings(); };
 
             BuildFilterBar();
 
@@ -594,6 +595,8 @@ namespace RSFind
             _maxMb.Value = _settings.MaxFileMegabytes;
             _before.Value = _settings.ContextBefore;
             _after.Value = _settings.ContextAfter;
+            _results.SetSort(ViewRules.ParseSort(_settings.SortKey, ResultSort.Name),
+                             _settings.SortDescending, false);
         }
 
         void SaveSettings()
@@ -611,6 +614,8 @@ namespace RSFind
             _settings.MaxFileMegabytes = _maxMb.Value;
             _settings.ContextBefore = _before.Value;
             _settings.ContextAfter = _after.Value;
+            _settings.SortKey = ViewRules.SortName(_results.SortKey);
+            _settings.SortDescending = _results.SortDescending;
             _settings.WindowMaximized = WindowState == FormWindowState.Maximized;
             if (WindowState == FormWindowState.Normal)
             {
@@ -809,6 +814,13 @@ namespace RSFind
                     _pending.Clear();
                 }
             }
+            // The order is applied once, here, rather than on every batch.
+            // Files arrive in whatever sequence the workers finish them, and
+            // re-sorting mid-scan would shuffle rows under whoever is reading
+            // the ones already on screen. Completion is a boundary they can
+            // feel, because the summary line stops moving at the same moment.
+            _results.ApplySort();
+
             SetSummary(Describe(p), false);
             _preview.Enabled = _found.Count > 0;
         }

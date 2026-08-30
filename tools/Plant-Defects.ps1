@@ -295,12 +295,75 @@ $plants = @(
        from = 'return Contains(lineText, filter) || Contains(location, filter);'
        to   = 'return Contains(lineText, filter);'
        want = 'a hit matching its location label is kept'
-       why  = 'a workbook hit has a cell reference where a log hit has a line number' }
+       why  = 'a workbook hit has a cell reference where a log hit has a line number' },
+
+    # Sorting. The tie-break gets two plants because it has two independent
+    # ways to be wrong, and either one alone leaves the order half-defined.
+    @{ file = 'ViewRules.cs'
+       from = @'
+            return ComparePath(a.RelativePath, b.RelativePath);
+        }
+
+        static int CompareKey(ResultSort key, FileHits a, FileHits b)
+'@
+       to   = @'
+            return 0;
+        }
+
+        static int CompareKey(ResultSort key, FileHits a, FileHits b)
+'@
+       want = 'and do so whichever order they arrived in'
+       why  = 'without a total order, files copied together land differently on every run' },
+
+    # Negating the tie-break along with the key, which is the plausible way to
+    # write this wrong: one negation covering the whole comparison rather than
+    # only the part the reader asked to reverse.
+    @{ file = 'ViewRules.cs'
+       from = @'
+            return ComparePath(a.RelativePath, b.RelativePath);
+        }
+
+        static int CompareKey(ResultSort key, FileHits a, FileHits b)
+'@
+       to   = @'
+            int tie = ComparePath(a.RelativePath, b.RelativePath);
+            return descending ? -tie : tie;
+        }
+
+        static int CompareKey(ResultSort key, FileHits a, FileHits b)
+'@
+       want = 'reversing the key does not reverse the name tie-break'
+       why  = 'newest first means newest first and then A to Z, not Z to A' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'a.Length.CompareTo(b.Length)'
+       to   = 'b.Length.CompareTo(a.Length)'
+       want = 'by size, smallest first'
+       why  = 'a sort key that runs backwards is still a defined order, and still wrong' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'while (v >= 1023.95 && u < units.Length - 1);'
+       to   = 'while (v >= 1024.0 && u < units.Length - 1);'
+       want = 'one byte under a megabyte does not render as 1024.0 KB'
+       why  = 'the promotion test has to be about the number that gets printed' },
+
+    @{ file = 'ViewRules.cs'
+       from = 'if (utc == default(DateTime)) return "";'
+       to   = 'if (false) return "";'
+       want = 'a timestamp that was never set renders as nothing'
+       why  = 'an unset timestamp must not render as a plausible-looking year 1 date' }
 
     # There is no plant for "a list that grows is left alone". The obvious
     # guard for it was written, planted, and shown to be dead code: a valid top
     # index is always below the count, so growth cannot trigger the rule. The
     # guard was removed rather than kept with an untestable plant beside it.
+    #
+    # There is no plant for the UTC-to-local conversion in FormatWhen either,
+    # and this one is a real gap rather than a resolved question. Any check for
+    # it compares against the machine's own zone, so on a machine running UTC
+    # the converted and unconverted answers are identical and no plant can
+    # fail. Rather than ship a plant that passes for the wrong reason on
+    # somebody else's box, it is named here.
 )
 
 $plantRoot = Join-Path $root 'testdata\plant'

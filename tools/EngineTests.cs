@@ -10,6 +10,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -54,6 +55,8 @@ namespace RSFind
                 DocumentTests();
                 ScrollTests();
                 FilterTests();
+                SortTests();
+                DetailTests();
                 LaunchTests();
                 CaseTests();
                 EngineTests_EndToEnd(root);
@@ -1388,6 +1391,166 @@ namespace RSFind
             Ok(errors.Count > 0, "the crafted archive is reported through onError");
 
             Directory.Delete(dir, true);
+        }
+
+        // ---- ordering ------------------------------------------------------
+
+        static FileHits Fh(string name, string modified, string created,
+                           long size, int hits)
+        {
+            FileHits fh = new FileHits();
+            fh.Path = @"C:\logs\" + name;
+            fh.RelativePath = name;
+            fh.Length = size;
+            fh.LastWriteUtc = DateTime.ParseExact(modified, "yyyy-MM-dd HH:mm",
+                CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+            fh.CreationUtc = DateTime.ParseExact(created, "yyyy-MM-dd HH:mm",
+                CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+            for (int i = 0; i < hits; i++) fh.Hits.Add(new Hit());
+            return fh;
+        }
+
+        // Sorts the same way ResultsView does, and reports the resulting order
+        // as names so a failure says what came out rather than that a bool was
+        // false.
+        static string Ordered(ResultSort key, bool descending, FileHits[] files)
+        {
+            FileHits[] copy = (FileHits[])files.Clone();
+            ResultSort k = key;
+            bool d = descending;
+            Array.Sort(copy, delegate(FileHits a, FileHits b)
+            {
+                return ViewRules.CompareFiles(k, d, a, b);
+            });
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < copy.Length; i++)
+            {
+                if (i > 0) sb.Append(' ');
+                sb.Append(copy[i].RelativePath);
+            }
+            return sb.ToString();
+        }
+
+        static void SortTests()
+        {
+            //          name        modified          created           size  hits
+            FileHits a = Fh("alpha.log", "2026-08-03 10:00", "2026-07-01 08:00", 4096, 9);
+            FileHits b = Fh("bravo.log", "2026-08-01 10:00", "2026-07-03 08:00", 8192, 2);
+            FileHits c = Fh("charlie.log", "2026-08-02 10:00", "2026-07-02 08:00", 1024, 5);
+            FileHits[] all = { c, a, b };   // deliberately not in any target order
+
+            Eq(Ordered(ResultSort.Name, false, all), "alpha.log bravo.log charlie.log", "by name");
+            Eq(Ordered(ResultSort.Name, true, all), "charlie.log bravo.log alpha.log", "by name, reversed");
+            Eq(Ordered(ResultSort.Modified, false, all), "bravo.log charlie.log alpha.log", "by modified, oldest first");
+            Eq(Ordered(ResultSort.Modified, true, all), "alpha.log charlie.log bravo.log", "by modified, newest first");
+            Eq(Ordered(ResultSort.Created, false, all), "alpha.log charlie.log bravo.log", "by created");
+            Eq(Ordered(ResultSort.Size, false, all), "charlie.log alpha.log bravo.log", "by size, smallest first");
+            Eq(Ordered(ResultSort.Size, true, all), "bravo.log alpha.log charlie.log", "by size, largest first");
+            Eq(Ordered(ResultSort.Hits, false, all), "bravo.log charlie.log alpha.log", "by hit count");
+            Eq(Ordered(ResultSort.Hits, true, all), "alpha.log charlie.log bravo.log", "by hit count, most first");
+
+            // Ties are the normal case, not the edge one: a folder copied off
+            // a device in one go carries one timestamp across every file in
+            // it. Array.Sort is not stable, so without a tie-break those files
+            // would come out in an arrangement that changes between runs -
+            // which is the exact nondeterminism this feature exists to remove.
+            FileHits t1 = Fh("zulu.log", "2026-08-05 12:00", "2026-08-05 12:00", 10, 1);
+            FileHits t2 = Fh("mike.log", "2026-08-05 12:00", "2026-08-05 12:00", 10, 1);
+            FileHits t3 = Fh("alfa.log", "2026-08-05 12:00", "2026-08-05 12:00", 10, 1);
+            FileHits[] tied = { t1, t2, t3 };            // zulu mike alfa
+            FileHits[] tiedOtherWay = { t3, t2, t1 };    // alfa mike zulu
+
+            // Both arrival orders are asserted, and the second one is the
+            // check that actually guards this.
+            //
+            // A single fixed input can pass with the tie-break removed purely
+            // by luck: with an all-equal comparison Array.Sort may leave three
+            // elements in any arrangement it likes, and on this runtime it
+            // reverses them - which turns zulu/mike/alfa into exactly the
+            // alphabetical answer the test was hoping to see. Planting the
+            // defect is what exposed that; the first line below passed with
+            // the tie-break gone. Requiring the same result from two opposite
+            // inputs is what makes the check about the rule instead of about
+            // the sort's internals.
+            Eq(Ordered(ResultSort.Modified, false, tied), "alfa.log mike.log zulu.log",
+               "files sharing a timestamp fall back to name order");
+            Eq(Ordered(ResultSort.Modified, false, tiedOtherWay), "alfa.log mike.log zulu.log",
+               "and do so whichever order they arrived in");
+
+            // And the tie-break is NOT reversed along with the key: "newest
+            // first" means newest first and then A to Z. Files sharing a
+            // timestamp have expressed no opinion about each other.
+            Eq(Ordered(ResultSort.Modified, true, tied), "alfa.log mike.log zulu.log",
+               "reversing the key does not reverse the name tie-break");
+            Eq(Ordered(ResultSort.Size, true, tied), "alfa.log mike.log zulu.log",
+               "the same holds for a reversed size sort");
+
+            // Names differing only in case still have to have an order, or the
+            // same argument applies to them.
+            Ok(ViewRules.ComparePath("Alpha.log", "alpha.log") != 0,
+               "two names differing only in case are not equal");
+            Ok(ViewRules.ComparePath("alpha.log", "Bravo.log") < 0,
+               "the primary comparison ignores case");
+
+            // Round-trips through settings.ini.
+            ResultSort[] keys = { ResultSort.Name, ResultSort.Modified,
+                                  ResultSort.Created, ResultSort.Size, ResultSort.Hits };
+            for (int i = 0; i < keys.Length; i++)
+            {
+                Eq(ViewRules.ParseSort(ViewRules.SortName(keys[i]), ResultSort.Hits),
+                   keys[i], "the sort key survives a settings round trip");
+            }
+            Eq(ViewRules.ParseSort("nonsense", ResultSort.Name), ResultSort.Name,
+               "an unreadable sort key falls back rather than throwing");
+            Eq(ViewRules.ParseSort("", ResultSort.Name), ResultSort.Name,
+               "a missing sort key falls back");
+            Eq(ViewRules.ParseSort("MODIFIED", ResultSort.Name), ResultSort.Modified,
+               "the sort key is not case sensitive");
+        }
+
+        // ---- what a file header shows ---------------------------------------
+
+        static void DetailTests()
+        {
+            Eq(ViewRules.FormatSize(0), "0 B", "zero bytes");
+            Eq(ViewRules.FormatSize(1), "1 B", "one byte");
+            Eq(ViewRules.FormatSize(1023), "1023 B", "the last value that is still bytes");
+            Eq(ViewRules.FormatSize(1024), "1.0 KB", "exactly a kilobyte");
+            Eq(ViewRules.FormatSize(1536), "1.5 KB", "a kilobyte and a half");
+            Eq(ViewRules.FormatSize(1048576), "1.0 MB", "exactly a megabyte");
+            Eq(ViewRules.FormatSize(1073741824), "1.0 GB", "exactly a gigabyte");
+            Eq(ViewRules.FormatSize(-1), "", "a negative size renders as nothing");
+
+            // The boundary the obvious implementation gets wrong: one byte
+            // under a megabyte is 1023.999 KB, which stays in KB against a
+            // 1024 test and then rounds to "1024.0 KB" for display - a unit it
+            // was just decided not to be in.
+            Eq(ViewRules.FormatSize(1048575), "1.0 MB",
+               "one byte under a megabyte does not render as 1024.0 KB");
+            Eq(ViewRules.FormatSize(1073741823), "1.0 GB",
+               "and the same at the next boundary up");
+
+            Eq(ViewRules.FormatWhen(default(DateTime)), "",
+               "a timestamp that was never set renders as nothing");
+
+            DateTime utc = new DateTime(2026, 6, 27, 17, 11, 0, DateTimeKind.Utc);
+            string shown = ViewRules.FormatWhen(utc);
+            Eq(shown,
+               TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local)
+                   .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+               "the header shows local time");
+
+            // Timestamps are carried in UTC so that comparing two of them is
+            // unambiguous, and a reader comparing one against their memory of
+            // when they were on that box is not going to do the arithmetic.
+            // Dropping the conversion would be silent: the dates stay
+            // plausible and are simply wrong by the offset. Written as one
+            // check either way so the count does not depend on the timezone
+            // the suite happens to run in.
+            bool onUtc = TimeZoneInfo.Local.GetUtcOffset(utc) == TimeSpan.Zero;
+            string raw = utc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            Ok((shown == raw) == onUtc,
+               "the timestamp is converted, so it matches the raw UTC text only on a UTC machine");
         }
 
         static SearchOptions NewOptions(string root, string query)
