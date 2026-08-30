@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+**`tools\Make-Dist.ps1` builds the release zip**, rebuilding the exe first
+rather than packaging whatever binary is lying in the folder. A distribution
+carrying an exe that does not match the sources beside it is worse than one
+carrying no exe at all. It writes a `.sha256` next to the zip, because DEPLOY.md
+tells the recipient to `Unblock-File` the download - which strips the one record
+Windows kept of where it came from - and something has to be verifiable before
+that, or "unblock it" is the whole story.
+
+It does not carry a third copy of the source list. `Build-RSFind.cmd` and
+`Run-From-Source.ps1` each hold one already, and DEPLOY.md asks whoever adds a
+file to keep them in step - which is a rule enforced by remembering. The
+packaging script reads the `.cs` files off the disk and compares that set
+against both lists, refusing to build a zip when they disagree and naming the
+file and the list it is missing from. A stray source file in the folder fails
+it too: an unexplained `.cs` in a distribution is exactly what a reader of it
+would be right to ask about. Both cases were tested by planting them.
+
+**DEPLOY.md covers mark of the web, and admits the exe cannot be verified by
+rebuilding it.** A downloaded zip carries a zone identifier that survives
+extraction onto every file inside it, so the symptom is SmartScreen or an exe
+that silently does nothing - hash first, then `Unblock-File` the zip before
+extracting rather than the files after.
+
+The honest half is the second one: the in-box compiler is not deterministic.
+Two builds of a byte-identical tree produce different binaries, because the PE
+header carries a fresh module ID each time - measured, not assumed. So the
+obvious integrity check a careful person would reach for, rebuild and compare
+against the shipped exe, cannot work here, and a mismatch is not evidence of
+anything. Saying so is better than leaving someone to discover it and conclude
+the download was tampered with.
+
 **The README says what it touches.** One table for the whole footprint:
 `settings.ini`, the undo folder, the `.rsfind-tmp` and `.rsfind-old` files that
 appear beside a file being replaced, an exported result list, and the two

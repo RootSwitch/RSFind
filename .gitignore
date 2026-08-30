@@ -5,8 +5,9 @@
 *.exe
 *.pdb
 
-# Distribution zip, when there is one. No packaging script is checked in yet;
-# this is here so a stray dist/ cannot be committed by accident.
+# Distribution zip, built by tools\Make-Dist.ps1. It is a release asset rather
+# than a tracked file: committing a binary that has to be rebuilt on every
+# source change is how a repo ends up shipping a stale one.
 dist/
 
 # Scratch corpora written by the test harness.

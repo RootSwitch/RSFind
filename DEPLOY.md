@@ -53,7 +53,8 @@ Two things to know:
 - **The source list is duplicated** between `Build-RSFind.cmd` and
   `Run-From-Source.ps1`. If one gains a file and the other does not, the script
   is the half that fails - with a missing-type error rather than by silently
-  building something different. Keep them in step.
+  building something different. Keep them in step; packaging a release checks
+  that you did, and refuses if you did not.
 - **The Explorer entry is refused from this path**, deliberately. It records
   `Application.ExecutablePath` as the program to launch, which under a
   PowerShell host is `powershell.exe`: a right-click item that opens a console
@@ -69,6 +70,48 @@ own registry hive.
 Put it somewhere stable **before** adding the Explorer entry: the entry records
 the absolute path of the executable at the moment you add it, so moving the exe
 afterwards leaves a menu item that fails silently. Re-adding it fixes that.
+
+## Mark of the web
+
+A zip downloaded through a browser carries a zone identifier, and that tag
+survives extraction onto every file inside it. The symptom is not always an
+obvious block - sometimes SmartScreen shows "Windows protected your PC", and
+sometimes the exe simply does nothing on double-click.
+
+Verify the hash first, then clear the tag. Unblocking strips the only record
+Windows kept of where the file came from, so it is worth one command first to
+confirm you have the file the release published:
+
+```powershell
+Get-FileHash .\RSFind.zip -Algorithm SHA256
+```
+
+Compare that against the `RSFind.zip.sha256` published beside it, then clear
+the tag on the zip **before** extracting, so it is not copied onto each
+extracted file:
+
+```powershell
+Unblock-File .\RSFind.zip
+```
+
+If it is already extracted, clear the folder:
+
+```powershell
+Get-ChildItem .\RSFind -Recurse | Unblock-File
+```
+
+The binary is unsigned. Code signing needs a certificate this project does not
+have, so SmartScreen will warn on a fresh download until enough people have run
+it. If that is unacceptable where you work, use `Run-From-Source.cmd`: it ships
+no binary at all, and the compiler it needs is already on the machine.
+
+**Rebuilding will not reproduce the published hash.** The in-box compiler is
+not deterministic - two builds of a byte-identical tree produce different
+binaries, because the PE header carries a fresh module ID each time. Verified
+by building twice and comparing. So "rebuild it and check the exe matches" is
+not a test that can work here, and finding a different hash is not evidence of
+anything. The published zip hash is what there is to verify against, and
+reading the sources is what the source path is for.
 
 ## The Explorer right-click entry
 
@@ -148,6 +191,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 That copies the tree, plants thirty-nine defects into the copies one at a time,
 and verifies that each is caught by the check that owns it. It never modifies
 the working files.
+
+## Packaging a release
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Make-Dist.ps1
+```
+
+Writes `dist\RSFind.zip` and `dist\RSFind.zip.sha256`, and prints the SHA256 of
+the zip and of the exe - the exe separately, because that is the form AppLocker
+wants.
+
+It rebuilds the exe first rather than zipping whatever is lying there. A
+distribution carrying a binary that does not match the sources beside it is
+worse than one carrying no binary at all.
+
+The zip holds what someone needs to run or rebuild: the exe, all thirteen
+sources, both launchers, the build script, README, DEPLOY, LICENSE, and the two
+images the README renders. Left out on purpose are the repo plumbing,
+CHANGELOG.md, `favicon.svg`, `docs/src/`, and `tools/` itself - none of it is
+needed to run or rebuild, and a dev script in a distribution just raises
+questions.
+
+**The sources are read off the disk rather than listed a third time.**
+`Build-RSFind.cmd` and `Run-From-Source.ps1` each carry a copy of that list
+already, and the note above asks you to keep them in step. The packaging script
+compares all three - both lists and the folder - and refuses to build a zip
+when they disagree, naming the file and which list is missing it. The drift
+this document warns about now fails a release instead of shipping one whose
+sources cannot rebuild its own exe.
 
 ## Re-rendering the images
 
