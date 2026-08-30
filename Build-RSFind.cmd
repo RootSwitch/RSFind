@@ -13,6 +13,7 @@ if not exist "%CSC%" (
 rem Every reference below is an assembly already installed with the framework.
 rem Nothing here is restored, vendored, or downloaded.
 "%CSC%" /nologo /target:winexe /optimize+ /out:"%~dp0RSFind.exe" ^
+    /win32icon:"%~dp0RSFind.ico" ^
     /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Xml.dll ^
     /r:System.IO.Compression.dll ^
     "%~dp0Themes.cs" "%~dp0Native.cs" "%~dp0Controls.cs" ^

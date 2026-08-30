@@ -66,6 +66,7 @@ $manifest = @('RSFind.exe') + $onDisk + @(
     'Run-From-Source.ps1'
     'Run-From-Source.cmd'
     'Build-RSFind.cmd'
+    'RSFind.ico'
     'README.md'
     'DEPLOY.md'
     'LICENSE'
