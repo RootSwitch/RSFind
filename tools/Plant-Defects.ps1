@@ -130,6 +130,44 @@ $plants = @(
        why  = 'the shared string table is where almost every cell value lives' },
 
     @{ file = 'OfficeText.cs'
+       from = 'settings.MaxCharactersInDocument = MaxExtractedChars;'
+       to   = 'settings.MaxCharactersInDocument = 0;'
+       want = 'an over-expanding archive is stopped by the parser'
+       why  = 'the declared size in a zip is a number the file supplies about itself' },
+
+    @{ file = 'OfficeText.cs'
+       from = @'
+            catch (Exception ex)
+            {
+                error = "could not be read as an Office file (" + ex.GetType().Name
+                      + ": " + ex.Message + ")";
+                return null;
+            }
+'@
+       to   = @'
+            catch (FormatException ex)
+            {
+                error = "could not be read as an Office file (" + ex.GetType().Name
+                      + ": " + ex.Message + ")";
+                return null;
+            }
+'@
+       want = 'a crafted archive does not throw out of Extract'
+       why  = 'an escaping exception faults the scan and hangs the window on Searching' },
+
+    @{ file = 'Replacer.cs'
+       from = 'if (file.Truncated)'
+       to   = 'if (false)'
+       want = 'a truncated file is refused rather than half-replaced'
+       why  = 'a capped file lands exactly on the preview gate and is half-written silently' },
+
+    @{ file = 'Replacer.cs'
+       from = 'catch (IOException ex) { Cleanup(temp); return ex.Message; }'
+       to   = 'catch (IOException ex) { return ex.Message; }'
+       want = 'no temp file is left behind'
+       why  = 'a failed write must not litter a half-written file beside the original' },
+
+    @{ file = 'OfficeText.cs'
        from = 'settings.DtdProcessing = DtdProcessing.Prohibit;'
        to   = 'settings.DtdProcessing = DtdProcessing.Parse;'
        want = 'a DTD in an Office file is refused, not expanded'

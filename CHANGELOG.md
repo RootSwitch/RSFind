@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+**A malformed Office file could hang the window permanently.** A zip entry name
+is arbitrary bytes; a Windows path name is not. An entry called `sheet"1".xml`
+reached `Path.GetFileNameWithoutExtension` and raised `ArgumentException`, which
+was not in `Extract`'s catch list. It then escaped `ScanFile` - whose two most
+exception-prone calls were both outside its `try` - faulted the scanning task,
+and left the window on "Searching..." with Find disabled and **Cancel unable to
+help**, because the task it cancels was already dead. Only killing the process
+recovered it. A 173-byte file was enough.
+
+Three independent guards, because each is worth having alone: `Extract` now
+treats any failure as "not a readable Office file", `ScanFile` wraps everything
+so one bad file is a skipped file, and the search task always leaves the running
+state. `Run` and the UI both report a fault on the summary line rather than
+falling silent.
+
+**A file past the per-file hit cap was silently half-replaced.** The cap and the
+preview limit are both 5,000, so a capped file landed exactly on the gate and
+slipped under a strict greater-than every time: 7,000 occurrences in, 5,000
+replaced, 2,000 left, and a success message mentioning none of it. This was the
+one place the project's own rule about caps was broken - everywhere else a cap
+that bites says so, and here it bit during a *write*. Truncated files are now
+refused in `Plan`, using the refusal row the preview already had.
+
+**A failed write could destroy the file and both copies of it.** When
+`File.Replace` failed, the fallback deleted the original and then moved the temp
+into place. A scanner grabbing the path between those two steps - the ordinary
+way this happens - failed the move, whereupon the temp was deleted as tidy-up
+and the caller deleted the backup. All three gone, from a design whose whole
+promise is that an interrupted write leaves the original intact. The fallback
+now renames the original aside instead of deleting it, restores it if the move
+fails, and the backup is kept on failure rather than cleaned up.
+
+**A 63 KB workbook could cost 640 MB.** `ZipArchiveEntry.Length` is the
+uncompressed size declared in the zip's central directory - a number the file
+supplies about itself - so the guard tested the claim rather than the delivery.
+Reads are now bounded by a limiting stream, and the parser carries
+`MaxCharactersInDocument`.
+
+That last part is where the measurement mattered: capping what the extractor
+appends does nothing, because `XmlReader` materializes a whole text node into a
+string before handing it over, so by the time `r.Value` can be inspected the
+allocation has happened. `MaxCharactersInDocument` is checked *during* parsing.
+Measured on the same fixture: 640 MB before, 48 MB after, and reported as a
+malformed file instead of silently returning nothing.
+
 **Every replace was silently stripping the byte-order mark.** Found by an
 external review, reproduced, and fixed.
 

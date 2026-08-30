@@ -107,6 +107,12 @@ namespace RSFind
         // an answer, it is a missing capability wearing one.
         public int FilesUnsupported;
         public string UnsupportedKinds = "";
+
+        // Set when the search ended because something threw rather than
+        // because it finished. The counts are still whatever was reached, so
+        // the results already on screen remain valid - they are just not all
+        // of them, and the summary has to say so.
+        public string Fault;
     }
 
     public class SearchEngine
@@ -123,6 +129,7 @@ namespace RSFind
         int filesUnsupported;
         int hits;
         int truncated;              // int rather than bool: written from many threads
+        string fault;               // set when Run ends by throwing rather than finishing
 
         readonly List<string> unsupportedKinds = new List<string>();
         readonly object callbackLock = new object();
@@ -152,6 +159,7 @@ namespace RSFind
             Stopwatch clock = Stopwatch.StartNew();
             bool cancelled = false;
             long lastReport = 0;
+            fault = null;
 
             ParallelOptions po = new ParallelOptions();
             po.CancellationToken = ct;
@@ -195,6 +203,19 @@ namespace RSFind
             {
                 cancelled = true;
             }
+            // Run always returns, whatever happened.
+            //
+            // ScanFile already swallows its own failures, so reaching here
+            // means the walk itself broke. Either way the caller is a UI that
+            // has disabled its Find button and started a timer, and the one
+            // outcome it cannot survive is never being told the search ended.
+            // Parallel.ForEach wraps worker exceptions in AggregateException,
+            // which is why this is not a list of types.
+            catch (Exception ex)
+            {
+                fault = ex.GetType().Name + ": " + ex.Message;
+                Report(onError, opts.Root, fault);
+            }
 
             SearchProgress final = Snapshot(clock, cancelled, true);
             if (onProgress != null) onProgress(final);
@@ -219,6 +240,7 @@ namespace RSFind
                 kinds.Sort(StringComparer.OrdinalIgnoreCase);
                 p.UnsupportedKinds = string.Join(", ", kinds.ToArray());
             }
+            p.Fault = fault;
             return p;
         }
 
@@ -290,7 +312,37 @@ namespace RSFind
             }
         }
 
+        // One file that cannot be read is a skipped file, never a dead search.
+        //
+        // The reads and parses below all have their own guards, but a blanket
+        // one is the only kind that stays correct as the method grows: the two
+        // most exception-prone calls in it - the Office extract and the text
+        // decode - were both outside the existing try, and a single crafted
+        // archive was enough to fault the scanning task, leave the UI on
+        // "Searching..." forever, and make Cancel useless because the task it
+        // cancels is already dead.
+        //
+        // Cancellation is re-thrown rather than swallowed: it is how a search
+        // is meant to end, and Run reads it to set the Cancelled flag.
         FileHits ScanFile(string path, CancellationToken ct, Action<string, string> onError)
+        {
+            try
+            {
+                return ScanFileCore(path, ct, onError);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref filesSkipped);
+                Report(onError, path, ex.GetType().Name + ": " + ex.Message);
+                return null;
+            }
+        }
+
+        FileHits ScanFileCore(string path, CancellationToken ct, Action<string, string> onError)
         {
             if (Thread.VolatileRead(ref hits) >= opts.MaxTotalHits)
             {

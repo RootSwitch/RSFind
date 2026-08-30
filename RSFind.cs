@@ -720,21 +720,44 @@ namespace RSFind
 
             Task.Factory.StartNew(delegate
             {
-                SearchProgress final = engine.Run(token,
-                    delegate(FileHits fh) { lock (_pendingLock) { _pending.Add(fh); } },
-                    delegate(SearchProgress p) { _progress = p; },
-                    delegate(string path, string message)
-                    {
-                        lock (_pendingLock)
-                        {
-                            // One line per unreadable place, capped: a scan
-                            // pointed at a system folder can produce thousands
-                            // and none of them are worth the memory.
-                            if (_errors.Count < 200) _errors.Add(path + ": " + message);
-                        }
-                    });
-                _progress = final;
+                try
+                {
+                    RunSearch(engine, token);
+                }
+                catch (Exception ex)
+                {
+                    // The window leaves the running state whatever happened.
+                    //
+                    // Without this the task faults, nobody observes it - .NET
+                    // swallows an unobserved Task exception - _progress never
+                    // reaches a finished snapshot, and the pump runs forever
+                    // with Find disabled and Cancel useless, because the task
+                    // it would cancel is already dead. Only killing the process
+                    // recovered it.
+                    SearchProgress failed = new SearchProgress();
+                    failed.Finished = true;
+                    failed.Fault = ex.GetType().Name + ": " + ex.Message;
+                    _progress = failed;
+                }
             });
+        }
+
+        void RunSearch(SearchEngine engine, CancellationToken token)
+        {
+            SearchProgress final = engine.Run(token,
+                delegate(FileHits fh) { lock (_pendingLock) { _pending.Add(fh); } },
+                delegate(SearchProgress p) { _progress = p; },
+                delegate(string path, string message)
+                {
+                    lock (_pendingLock)
+                    {
+                        // One line per unreadable place, capped: a scan
+                        // pointed at a system folder can produce thousands
+                        // and none of them are worth the memory.
+                        if (_errors.Count < 200) _errors.Add(path + ": " + message);
+                    }
+                });
+            _progress = final;
         }
 
         // Drains what the worker produced onto the UI thread. One timer rather
@@ -761,7 +784,7 @@ namespace RSFind
             SearchProgress p = _progress;
             if (p == null) return;
 
-            SetSummary(Describe(p), false);
+            SetSummary(Describe(p), p.Fault != null);
             if (!p.Finished) return;
 
             _pump.Stop();
@@ -822,6 +845,9 @@ namespace RSFind
             // Both of these change what the numbers above mean, so neither is
             // allowed to be silent. A short list that does not say it is short
             // reads as "that is all there is".
+            if (p.Fault != null)
+                sb.Append(". The search stopped early (").Append(p.Fault)
+                  .Append("), so this is a partial result");
             if (p.Cancelled) sb.Append(". Cancelled - this is a partial result");
             if (p.Truncated) sb.Append(". Hit cap reached - there are more matches than are listed");
             lock (_pendingLock)

@@ -57,6 +57,7 @@ namespace RSFind
                 CaseTests();
                 EngineTests_EndToEnd(root);
                 OfficeEndToEnd(root);
+                HostileArchiveTests(root);
                 ReplaceTests(root);
 
                 Console.WriteLine("PASS  " + checks + " checks");
@@ -996,8 +997,99 @@ namespace RSFind
                "a literal replacement containing $1 is written as typed");
 
             BomRoundTrip(dir);
+            CappedFileRefused(dir);
+            FailedWriteKeepsTheFile(dir);
 
             Directory.Delete(dir, true);
+        }
+
+        // A write that fails must never cost the file.
+        //
+        // The failure is forced the way it happens in the wild: something else
+        // holds the file open. A handle opened with FileShare.Read still lets
+        // RSFind read the file, but blocks File.Replace and blocks renaming it
+        // aside, so the write fails at the point where the old fallback was at
+        // its most dangerous - it deleted the original first, and on a failed
+        // move deleted the new content too while the caller deleted the backup.
+        static void FailedWriteKeepsTheFile(string parent)
+        {
+            string dir = Path.Combine(parent, "lockedwrite");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "held.txt");
+            string undo = Path.Combine(dir, "undo");
+            const string Original = "the colour table\r\n";
+            File.WriteAllText(path, Original, new UTF8Encoding(false));
+
+            FileHits fh = FindOne(dir, "colour", "held.txt", false, false);
+            ReplaceOptions o = new ReplaceOptions();
+            o.Replacement = "color";
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            plans.Add(Replacer.Plan(fh, new Matcher("colour", false, false, false), o));
+
+            ReplaceResult r;
+            using (FileStream held = new FileStream(path, FileMode.Open,
+                                                    FileAccess.Read, FileShare.Read))
+            {
+                r = Replacer.Apply(plans, undo);
+            }
+
+            Eq(r.FilesWritten, 0, "a write blocked by another handle does not report success");
+            Ok(r.Failures.Count > 0, "and reports the failure");
+            Ok(File.Exists(path), "the original file still exists after a failed write");
+            Eq(File.ReadAllText(path), Original, "and still holds its original content");
+
+            // Nothing half-written left lying beside it.
+            Ok(!File.Exists(path + ".rsfind-tmp"), "no temp file is left behind");
+            Ok(!File.Exists(path + ".rsfind-old"), "no renamed original is left behind");
+
+            // And the backup survives, because a failed write is the one case
+            // where it might have been the only copy left.
+            int backups = 0;
+            if (Directory.Exists(undo))
+                foreach (string sub in Directory.GetDirectories(undo))
+                    backups += Directory.GetFiles(sub, "*.bak").Length;
+            Ok(backups > 0, "the backup copy is kept after a failed write");
+        }
+
+        // A file the search stopped counting early must be refused, not
+        // half-replaced.
+        //
+        // The per-file hit cap and the preview cap are the same number, so a
+        // capped file lands exactly on the limit and slips under the preview
+        // gate's strict greater-than every time. It used to be replaced
+        // silently: 7,000 occurrences in, 5,000 replaced, 2,000 left, and a
+        // success message that mentioned none of it.
+        static void CappedFileRefused(string parent)
+        {
+            string dir = Path.Combine(parent, "capped");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "many.txt");
+
+            SearchOptions o = NewOptions(dir, "colour");
+            o.MaxHitsPerFile = 10;          // the real cap, in miniature
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 25; i++) sb.Append("colour\r\n");
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+
+            Dictionary<string, FileHits> byName = new Dictionary<string, FileHits>();
+            RunSearch(o, byName);
+            FileHits fh = byName["many.txt"];
+            Eq(fh.Hits.Count, 10, "the search stops at the per-file cap");
+            Ok(fh.Truncated, "and marks the file truncated");
+
+            ReplaceOptions ro = new ReplaceOptions();
+            ro.Replacement = "color";
+            ReplacePlan plan = Replacer.Plan(fh, new Matcher("colour", false, false, false), ro);
+            Ok(plan.Refusal != null, "a truncated file is refused rather than half-replaced");
+            Ok(plan.Refusal.IndexOf("more than were found", StringComparison.Ordinal) >= 0,
+               "and the refusal says the file holds more than the search found");
+
+            // Nothing was written, so the file is still internally consistent.
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            plans.Add(plan);
+            ReplaceResult r = Replacer.Apply(plans, Path.Combine(dir, "undo"));
+            Eq(r.FilesWritten, 0, "a refused file is not written");
+            Eq(File.ReadAllText(path), sb.ToString(), "and is left exactly as it was");
         }
 
         // A replace must return the file with its byte-order mark intact.
@@ -1051,6 +1143,120 @@ namespace RSFind
                label + " is still findable after the replace");
         }
         // charcheck:spelling-on
+
+        // A crafted archive must be a skipped file, never a dead search.
+        //
+        // The trigger is cheap and specific: a zip entry name is arbitrary
+        // bytes, a Windows path name is not, so an entry called sheet"1".xml
+        // reaches Path.GetFileNameWithoutExtension in the Sheets fallback and
+        // raises ArgumentException. That used to escape Extract, escape
+        // ScanFile, fault the scanning task, and leave the UI on "Searching..."
+        // with Cancel unable to help - the task it cancels is already dead.
+        static byte[] HostileWorkbook()
+        {
+            byte[] bytes;
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (ZipArchive zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                {
+                    // No xl/workbook.xml, so Sheets takes its filename fallback.
+                    ZipArchiveEntry e = zip.CreateEntry("xl/worksheets/sheetX1.xml");
+                    using (StreamWriter w = new StreamWriter(e.Open(), new UTF8Encoding(false)))
+                        w.Write("<worksheet><sheetData/></worksheet>");
+                }
+                bytes = ms.ToArray();
+            }
+            // ZipArchive validates entry names when writing but not when
+            // reading, so the name is patched afterwards. Same length, so the
+            // local header and the central directory both stay valid - which is
+            // exactly what an archive written by any other tool can carry.
+            byte[] marker = Encoding.ASCII.GetBytes("sheetX1.xml");
+            for (int i = 0; i + marker.Length <= bytes.Length; i++)
+            {
+                bool hit = true;
+                for (int k = 0; k < marker.Length && hit; k++)
+                    if (bytes[i + k] != marker[k]) hit = false;
+                if (hit) bytes[i + 5] = (byte)'"';
+            }
+            return bytes;
+        }
+
+        // A small archive that delivers far more than it costs to store.
+        //
+        // The declared uncompressed size in a zip's central directory is a
+        // number the file supplies about itself, so a guard that reads it
+        // guards nothing. This fixture is tiny on disk and well past the
+        // character budget when parsed, which is the only figure that costs
+        // memory.
+        static byte[] ExpandingWorkbook()
+        {
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (ZipArchive zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                {
+                    ZipArchiveEntry e = zip.CreateEntry("xl/sharedStrings.xml",
+                                                        CompressionLevel.Optimal);
+                    using (StreamWriter w = new StreamWriter(e.Open(), new UTF8Encoding(false)))
+                    {
+                        w.Write("<sst><si><t>");
+                        string chunk = new string('A', 1024 * 1024);
+                        int megabytes = (OfficeText.MaxExtractedChars / (1024 * 1024)) + 2;
+                        for (int i = 0; i < megabytes; i++) w.Write(chunk);
+                        w.Write("</t></si></sst>");
+                    }
+                }
+                return ms.ToArray();
+            }
+        }
+
+        static void HostileArchiveTests(string root)
+        {
+            string dir = Path.Combine(root, "hostile");
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "crafted.xlsx"), HostileWorkbook());
+            File.WriteAllText(Path.Combine(dir, "ordinary.log"), "decommission the array\r\n");
+
+            string error = null;
+            List<OfficeLine> lines = null;
+            bool threw = false;
+            try { lines = OfficeText.Extract(HostileWorkbook(), "crafted.xlsx", out error); }
+            catch (Exception) { threw = true; }
+            Ok(!threw, "a crafted archive does not throw out of Extract");
+            Ok(lines == null, "a crafted archive extracts nothing");
+            Ok(error != null, "a crafted archive reports why rather than throwing");
+
+            // A part that expands far past the budget is refused during
+            // parsing, not after it has been allocated.
+            byte[] bomb = ExpandingWorkbook();
+            threw = false;
+            try { lines = OfficeText.Extract(bomb, "bomb.xlsx", out error); }
+            catch (Exception) { threw = true; }
+            Ok(!threw, "an over-expanding archive does not throw out of Extract");
+            // The specific check first: without the parser's limit the bomb
+            // parses fine and this is the assertion that notices.
+            Ok(error != null && error.IndexOf("MaxCharactersInDocument",
+                   StringComparison.Ordinal) >= 0,
+               "an over-expanding archive is stopped by the parser's character limit");
+            Ok(lines == null, "an over-expanding archive extracts nothing");
+
+            // The property that matters: the search still finishes, the good
+            // file is still found, and the bad one is reported.
+            SearchOptions o = NewOptions(dir, "decommission");
+            Dictionary<string, FileHits> byName = new Dictionary<string, FileHits>();
+            List<string> errors = new List<string>();
+            SearchProgress p = new SearchEngine(o).Run(CancellationToken.None,
+                delegate(FileHits fh) { byName[Path.GetFileName(fh.Path)] = fh; },
+                null,
+                delegate(string path, string message) { errors.Add(path); });
+
+            Ok(p.Finished, "a search over a crafted archive still finishes");
+            Ok(p.Fault == null, "and finishes normally rather than by faulting");
+            Ok(byName.ContainsKey("ordinary.log"),
+               "the readable file beside it is still searched");
+            Ok(errors.Count > 0, "the crafted archive is reported through onError");
+
+            Directory.Delete(dir, true);
+        }
 
         static SearchOptions NewOptions(string root, string query)
         {

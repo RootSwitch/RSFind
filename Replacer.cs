@@ -164,6 +164,25 @@ namespace RSFind
                              + "turn off Strip ANSI escapes and search again";
                 return plan;
             }
+            // The search stopped counting before it reached the end of this
+            // file, so replacing what it did find would leave the rest behind
+            // and report a number that sounds complete.
+            //
+            // This is the one place the project's own rule about caps was being
+            // broken. Everywhere else a cap that bites says so; here it bit
+            // during a WRITE and nothing said anything - a file with 7,000
+            // occurrences came back "Replaced 5,000 matches" with 2,000 still
+            // in it. Worse, the per-file cap and the preview cap are the same
+            // number, so a capped file lands exactly on the limit and slips
+            // under a strict greater-than every time.
+            if (file.Truncated)
+            {
+                plan.Refusal = "the search stopped at " +
+                    file.Hits.Count.ToString("N0", CultureInfo.InvariantCulture) +
+                    " matches in this file, so it holds more than were found; "
+                    + "narrow the search and replace again";
+                return plan;
+            }
 
             string text;
             Encoding encoding;
@@ -368,7 +387,15 @@ namespace RSFind
                 if (refusal != null)
                 {
                     result.Failures.Add(plan.File.RelativePath + ": " + refusal);
-                    try { File.Delete(backup); } catch (IOException) { }
+                    // The backup is kept, deliberately.
+                    //
+                    // It used to be deleted here as tidy-up, which is exactly
+                    // backwards: a failed write is the one case where the copy
+                    // might be the only one left. A stray .bak in the undo
+                    // folder costs nothing, and the manifest names which run it
+                    // came from.
+                    result.Failures.Add(plan.File.RelativePath
+                        + ": a copy of the original was kept at " + backup);
                     continue;
                 }
 
@@ -519,24 +546,45 @@ namespace RSFind
             catch (IOException)
             {
                 // Replace refuses across some filesystems and on files with
-                // certain attributes. Falling back is worth it, but only after
-                // the temp file is known to be complete.
+                // certain attributes, so a fallback is worth having. The
+                // fallback must not be delete-then-move.
+                //
+                // Deleting first opens a window in which the original is gone
+                // and the new content is not yet in place. A scanner or an
+                // indexer grabbing the path in that window - the ordinary way
+                // this happens - fails the move, and the old code then deleted
+                // the temp as tidy-up while the caller deleted the backup. All
+                // three copies gone, from a design whose whole promise is that
+                // an interrupted write leaves the original intact.
+                //
+                // Renaming aside instead means there is never a moment with no
+                // copy of the file, and a failed move can be undone.
+                string aside = path + ".rsfind-old";
                 try
                 {
-                    File.Delete(path);
+                    Cleanup(aside);
+                    File.Move(path, aside);
+                }
+                catch (IOException ex) { Cleanup(temp); return ex.Message; }
+                catch (UnauthorizedAccessException ex) { Cleanup(temp); return ex.Message; }
+
+                try
+                {
                     File.Move(temp, path);
-                    return null;
                 }
-                catch (IOException ex)
+                catch (Exception ex)
                 {
-                    Cleanup(temp);
+                    // Put the original back and leave the temp alone. A stray
+                    // .rsfind-tmp beside the file is a far better outcome than
+                    // a missing file, and the caller keeps its backup.
+                    try { File.Move(aside, path); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
                     return ex.Message;
                 }
-                catch (UnauthorizedAccessException ex)
-                {
-                    Cleanup(temp);
-                    return ex.Message;
-                }
+
+                Cleanup(aside);
+                return null;
             }
             catch (UnauthorizedAccessException ex)
             {

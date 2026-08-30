@@ -99,14 +99,14 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 206 engine checks with the same in-box compiler, then the house
+Builds and runs 249 engine checks with the same in-box compiler, then the house
 style check. To confirm the checks can still fail after a refactor:
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Plant-Defects.ps1
 ```
 
-That copies the tree, plants twenty-nine defects into the copies one at a time,
+That copies the tree, plants thirty-four defects into the copies one at a time,
 and verifies that each is caught by the check that owns it. It never modifies
 the working files.
 
@@ -118,7 +118,7 @@ and a re-render rather than an image edit - which matters because an image
 cannot be grepped or corrected once links to it are cached.
 
 ```bash
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\Render-Png.ps1 -Html docs\src\hero.html -Out docs\hero-quadrants.png -Width 2000 -Height 1444
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Render-Png.ps1 -Html docs\src\hero.html -Out docs\hero-quadrants.png -Width 2000 -Height 1392
 ```
 
 ```bash

@@ -152,6 +152,7 @@ outcome here.
 | Refused | Why |
 |---|---|
 | A file changed since the search | Three checks: size, timestamp, and re-reading every line being edited. The last one catches an edit that kept the same size and restored the timestamp. |
+| A file the search stopped counting early | The per-file cap is 5,000 matches. A file holding more than that is refused rather than partly replaced, because replacing what was found would leave the rest behind and report a number that sounds complete. |
 | An Office file | The text was extracted from a ZIP. Writing it back would destroy the file. |
 | A file whose escapes were stripped | The match positions point at cleaned text, not at the bytes on disk. Turn off **Strip ANSI escapes** and search again. A file containing no escapes is unaffected and can still be replaced. |
 | A binary | Regardless of the exclude-binary setting. Unchecking that box to find a string inside a firmware image is not a request to rewrite it. |

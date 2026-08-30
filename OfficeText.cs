@@ -37,6 +37,13 @@ namespace RSFind
         public const long MaxEntryBytes = 96L * 1024 * 1024;
         public const int MaxExtractedChars = 24 * 1024 * 1024;
 
+        // One cell, one run, one shared string. A million characters in a
+        // single element is already far past anything a person authored, and
+        // without this bound one giant <t> is enough on its own: the element
+        // readers accumulate into a StringBuilder before any of the other
+        // budgets are consulted.
+        public const int MaxElementChars = 1024 * 1024;
+
         // Guessed from the extension rather than by sniffing the zip. A file
         // named .xlsx that is not one fails the parse and is reported; a
         // workbook named .dat is not something a folder search should be
@@ -121,9 +128,80 @@ namespace RSFind
                 error = "unsupported Office packaging (" + ex.Message + ")";
                 return null;
             }
+            // Everything else, deliberately.
+            //
+            // The named list above covers the failures a merely corrupt file
+            // produces. A crafted one is not limited to those: a zip entry name
+            // is arbitrary bytes, while a Windows path name is not, so an entry
+            // called sheet"1".xml reaches Path.GetFileNameWithoutExtension in
+            // the Sheets fallback and raises ArgumentException - which used to
+            // escape this method, fault the scanning task, and leave the window
+            // stuck on "Searching..." with Cancel unable to recover it.
+            //
+            // Enumerating what a hostile archive can throw is a losing game.
+            // The contract this method actually wants is "any failure means it
+            // is not a readable Office file", which is what this says.
+            catch (Exception ex)
+            {
+                error = "could not be read as an Office file (" + ex.GetType().Name
+                      + ": " + ex.Message + ")";
+                return null;
+            }
         }
 
         // ---- shared plumbing --------------------------------------------------
+
+        // A stream that stops rather than trusting what the archive claims.
+        //
+        // ZipArchiveEntry.Length is the uncompressed size recorded in the
+        // central directory - a number the file supplies about itself. An
+        // archive that declares 1 KB and delivers 400 MB passes any check made
+        // against it, and DeflateStream produces the 400 MB regardless. So the
+        // declared size is kept as a cheap first pass and this bounds the
+        // actual delivery, which is the only figure that costs memory.
+        class BoundedStream : Stream
+        {
+            readonly Stream inner;
+            readonly long limit;
+            long read;
+
+            public BoundedStream(Stream inner, long limit)
+            {
+                this.inner = inner;
+                this.limit = limit;
+            }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int n = inner.Read(buffer, offset, count);
+                read += n;
+                if (read > limit)
+                    throw new InvalidDataException(
+                        "the file expands past the " + (limit / (1024 * 1024)).ToString(
+                            CultureInfo.InvariantCulture) + " MB limit for one part");
+                return n;
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing) inner.Dispose();
+                base.Dispose(disposing);
+            }
+
+            public override bool CanRead { get { return true; } }
+            public override bool CanSeek { get { return false; } }
+            public override bool CanWrite { get { return false; } }
+            public override long Length { get { throw new NotSupportedException(); } }
+            public override long Position
+            {
+                get { throw new NotSupportedException(); }
+                set { throw new NotSupportedException(); }
+            }
+            public override void Flush() { }
+            public override long Seek(long o, SeekOrigin s) { throw new NotSupportedException(); }
+            public override void SetLength(long v) { throw new NotSupportedException(); }
+            public override void Write(byte[] b, int o, int c) { throw new NotSupportedException(); }
+        }
 
         // DTD processing off and no resolver. These files come from other
         // people, and an XML parser that will fetch an external entity is a
@@ -132,6 +210,7 @@ namespace RSFind
         static XmlReader Open(ZipArchiveEntry entry)
         {
             if (entry == null) return null;
+            // Cheap first pass on the declared size; the real bound is below.
             if (entry.Length > MaxEntryBytes) return null;
 
             XmlReaderSettings settings = new XmlReaderSettings();
@@ -143,7 +222,23 @@ namespace RSFind
             // " - " and xml:space="preserve" is how the format says so.
             settings.IgnoreWhitespace = false;
             settings.CheckCharacters = false;
-            return XmlReader.Create(entry.Open(), settings);
+            // CloseInput so disposing the reader closes the bounded stream and
+            // the entry stream under it, rather than leaving both to the
+            // archive's own disposal.
+            settings.CloseInput = true;
+            // The bound that actually holds, and the one that took a
+            // measurement to find.
+            //
+            // Capping what this file appends is not enough, because XmlReader
+            // materializes a whole text node into a string before handing it
+            // over: by the time r.Value can be inspected, a single 400 MB <t>
+            // has already been allocated. Bounding the StringBuilder after that
+            // point measures a cost that has been paid. MaxCharactersInDocument
+            // is checked during parsing, so it throws XmlException - which
+            // Extract already reports as a malformed file - before the
+            // allocation happens.
+            settings.MaxCharactersInDocument = MaxExtractedChars;
+            return XmlReader.Create(new BoundedStream(entry.Open(), MaxEntryBytes), settings);
         }
 
         static ZipArchiveEntry Find(ZipArchive zip, string name)
@@ -229,9 +324,16 @@ namespace RSFind
             return found;
         }
 
+        // Budgeted, like the sheet and paragraph readers.
+        //
+        // This table is where a workbook's text actually lives, and it had no
+        // budget at all - so the one part most worth bounding was the one part
+        // that was not. A 63 KB archive holding a single huge shared string
+        // cost 640 MB of heap and returned no lines whatsoever.
         static List<string> SharedStrings(ZipArchive zip)
         {
             List<string> strings = new List<string>();
+            int budget = MaxExtractedChars;
             using (XmlReader r = Open(Find(zip, "xl/sharedStrings.xml")))
             {
                 if (r == null) return strings;
@@ -258,7 +360,13 @@ namespace RSFind
                         if (r.LocalName == "si" && inItem)
                         {
                             strings.Add(sb.ToString());
+                            budget -= sb.Length;
                             inItem = false;
+                            // Stop building the table, but keep the entries
+                            // already read: the sheet indexes into this list by
+                            // position, so returning a short list is better
+                            // than returning none.
+                            if (budget <= 0) return strings;
                         }
                         else if (r.LocalName == "rPh") inPhonetic = false;
                     }
@@ -267,7 +375,7 @@ namespace RSFind
                               r.NodeType == XmlNodeType.SignificantWhitespace ||
                               r.NodeType == XmlNodeType.Whitespace))
                     {
-                        sb.Append(r.Value);
+                        if (sb.Length < MaxElementChars) sb.Append(r.Value);
                     }
                 }
             }
@@ -342,6 +450,12 @@ namespace RSFind
 
         // Reads all text under the current element, leaving the reader on its
         // end tag.
+        //
+        // Bounded, because this is where a crafted file does its damage: the
+        // budgets in the sheet and paragraph readers are spent per emitted
+        // line, and a single enormous element is consumed in full before any
+        // line is emitted at all. The reader is still driven to the end tag
+        // past the bound so the caller stays correctly positioned.
         static string ReadTextOf(XmlReader r)
         {
             StringBuilder sb = new StringBuilder();
@@ -354,7 +468,9 @@ namespace RSFind
                 if (r.NodeType == XmlNodeType.Text ||
                     r.NodeType == XmlNodeType.SignificantWhitespace ||
                     r.NodeType == XmlNodeType.Whitespace)
-                    sb.Append(r.Value);
+                {
+                    if (sb.Length < MaxElementChars) sb.Append(r.Value);
+                }
             }
             return sb.ToString();
         }

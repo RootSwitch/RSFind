@@ -5,7 +5,8 @@
 *.exe
 *.pdb
 
-# Distribution zip. tools\Make-Dist.ps1 regenerates it.
+# Distribution zip, when there is one. No packaging script is checked in yet;
+# this is here so a stray dist/ cannot be committed by accident.
 dist/
 
 # Scratch corpora written by the test harness.
