@@ -182,6 +182,14 @@ box rather than left to be discovered.
   exactly as they were. Only the matched spans change.
 - In regex mode, `$1` and friends are substituted. In literal mode a
   replacement containing `$1` is written exactly as typed.
+- **When several matches land on one line, each preview row shows that one
+  change against the original line** - so no single row shows the line as it
+  will finally read. Replacing `nvme0` with `nvme1` on
+  `check nvme0 then nvme0 then nvme0` previews as three rows, each with one
+  substitution made, and writes `check nvme1 then nvme1 then nvme1`. Every row
+  is accurate about its own change, which is what makes the per-row checkboxes
+  mean something; showing the cumulative line instead would make each row
+  depend on which other boxes are ticked.
 
 ## Working with the results
 

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+**Documented what the preview shows when several matches land on one line.**
+Each row renders that one change against the original line, so no single row
+shows the line as it will finally read - the write applies all the selected ones
+together. A review raised it as a low-severity finding and suggested either
+rendering the cumulative line or a README note.
+
+The note, deliberately. Every row being accurate about its own change is what
+makes the per-row checkboxes mean anything; showing the cumulative line would
+make each row depend on which other boxes are ticked, which trades one confusion
+for a worse one.
+
 **Undo backups are bounded at the last 10 runs, and the folder is no longer a
 secret.** Nothing pruned them before: there was no retention limit, no cleanup,
 and no UI to clear them, and the only mention of the location was in DEPLOY.md.
