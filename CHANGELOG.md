@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 - 2026-08-30
 
 **Scrolling appeared to select every line it revealed.** Click one line, scroll,
 and everything coming into view rendered as though it were selected too.
