@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**The README says what it touches.** One table for the whole footprint:
+`settings.ini`, the undo folder, the `.rsfind-tmp` and `.rsfind-old` files that
+appear beside a file being replaced, an exported result list, and the two
+registry keys - each with when it is written, and which one of them grows. That
+was spread across the Options section, the Undo section, and DEPLOY.md before,
+so the honest answer to "what does this put on my disk" took three readings and
+knowing that the third file existed.
+
 **`Run-From-Source.cmd`, matching RSPaster.** Compiles the sources in memory
 with `Add-Type` and runs the same app with no executable involved. It exists
 because an executable is a thing people have to decide to trust: a freshly

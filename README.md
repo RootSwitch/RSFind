@@ -266,6 +266,39 @@ An editor command sidesteps this entirely: handing a path to a text editor does
 not execute it, so with one set you can open anything. **Open Containing
 Folder** on the right-click menu is the other way round it.
 
+## What it touches
+
+Nothing is installed, no service is registered, nothing is added to startup,
+and nothing goes out on the network. What it writes is this, and this is all
+of it:
+
+| What | Where | When |
+|---|---|---|
+| Preferences | `%APPDATA%\RSFind\settings.ini` | On exit. Plain `key=value`, under 1 KB, and no record of what you searched for. |
+| Undo copies | `%APPDATA%\RSFind\undo\<timestamp>\` | On every replace. The last 10 runs are kept; older ones are removed. |
+| A temporary file | `<the file>.rsfind-tmp`, beside the file being replaced | During a replace, removed when it succeeds. |
+| The original, renamed aside | `<the file>.rsfind-old`, likewise | Only when the swap fails and RSFind falls back to a rename. |
+| An exported result list | Wherever you point the Save dialog | Only from **Menu > Export Results**. |
+| Two registry keys | `HKCU\Software\Classes\Directory\shell\RSFind` and the same under `Directory\Background` | Only if you turn on the Explorer entry, and removed when you turn it off. |
+
+**The undo folder is the one that grows.** It holds complete copies of the
+files you have changed, so a replace across a hundred documents puts a hundred
+documents in your profile. It is capped rather than unbounded, and deleting it
+is safe at any time - it costs only the ability to undo past replaces.
+
+**Nothing is written to `%TEMP%`.** The one exception is `Run-From-Source.cmd`,
+which compiles on launch: the in-box C# compiler writes seven scratch files
+there and removes them within a second. The exe does not do this at all.
+
+If a replace is interrupted - the machine loses power, the process is killed -
+a `.rsfind-tmp` can be left behind. That is deliberate: a stray temp file is a
+better outcome than a moment where your file does not exist. It is safe to
+delete, and the name makes it easy to find.
+
+The only programs it starts are the ones you ask it to: Explorer for **Open
+Containing Folder**, and whatever opens a result you double-click. See above
+for what it refuses to launch.
+
 ## What it deliberately does not do
 
 - **No index and no background service.** Nothing runs when the window is
