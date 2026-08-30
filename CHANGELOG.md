@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+**A zero-width regex replace overwrote a character instead of inserting one.**
+Replacing `^` with `> ` across a file produced `> ello` from `hello` - every
+line prefixed and its first character eaten.
+
+One line was doing two jobs badly. `Matcher.Next` reported a zero-width match as
+length 1, which kept a search loop adding that length from spinning forever on a
+pattern like `x*` - and `Replacer` took the same number as the span to
+overwrite. The search was safe and the replace was wrong, from the same
+constant.
+
+They are separated now: `Next` reports the true length, zero included, and
+`Matcher.Advance` is how a loop moves past a match. A length is a fact about the
+match; advancing is the loop's problem. Both halves have their own planted
+defect, because either one alone reintroduces half the bug.
+
+"Prefix every line" is a common enough use of a regex replace that this was
+going to be found. The preview did show `> ello`, so the backstop worked - but
+the tool was still doing something other than what was asked.
+
 **A malformed Office file could hang the window permanently.** A zip entry name
 is arbitrary bytes; a Windows path name is not. An entry called `sheet"1".xml`
 reached `Path.GetFileNameWithoutExtension` and raised `ArgumentException`, which

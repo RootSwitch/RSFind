@@ -105,7 +105,7 @@ namespace RSFind
             while (n < RunawayGuard && m.Next(line, from, out s, out len))
             {
                 n++;
-                from = s + len;
+                from = Matcher.Advance(s, len);
             }
             return n;
         }
@@ -148,9 +148,19 @@ namespace RSFind
             Ok(threw, "an empty query raises PatternError");
 
             // A pattern that can match nothing must still terminate. Without
-            // the zero-width guard this call never returns.
+            // Advance this call never returns.
             Matcher zero = new Matcher("x*", false, false, true);
             Ok(CountMatches(zero, "abc") < 100, "a zero-width regex terminates");
+
+            // And it must report the truth about itself while doing so. The
+            // length used to come back as 1 so that a caller adding it could
+            // not spin - which made every zero-width REPLACE overwrite a real
+            // character. Advancing is the loop's job; a length is a fact.
+            int zs, zlen;
+            Ok(zero.Next("abc", 0, out zs, out zlen), "a zero-width pattern matches");
+            Eq(zlen, 0, "a zero-width match reports length zero, not one");
+            Eq(Matcher.Advance(zs, zlen), 1, "and Advance still moves the scan forward");
+            Eq(Matcher.Advance(4, 3), 7, "Advance past a real match moves by its length");
 
             // Catastrophic backtracking is preempted rather than hanging a
             // reader thread past any Cancel the user presses.
@@ -999,8 +1009,43 @@ namespace RSFind
             BomRoundTrip(dir);
             CappedFileRefused(dir);
             FailedWriteKeepsTheFile(dir);
+            ZeroWidthInserts(dir);
 
             Directory.Delete(dir, true);
+        }
+
+        // A zero-width match must insert, not overwrite.
+        //
+        // "Prefix every line" is the ordinary use of a regex replace, and it
+        // used to eat the first character of each line: the matcher reported a
+        // zero-width match as length 1 so that a search loop adding the length
+        // could not spin, and Replacer took that same number as the span to
+        // overwrite. The preview showed "> ello", so the backstop worked - but
+        // the tool was still doing something other than what was asked.
+        static void ZeroWidthInserts(string parent)
+        {
+            string dir = Path.Combine(parent, "zerowidth");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "lines.txt");
+            File.WriteAllText(path, "hello\r\nworld\r\n", new UTF8Encoding(false));
+
+            FileHits fh = FindOne(dir, "^", "lines.txt", false, true);
+            Ok(fh != null, "an anchor pattern finds the lines");
+            Eq(fh.Hits.Count, 2, "one match per line start");
+            Eq(fh.Hits[0].MatchLength, 0, "the hit records a zero-width match");
+
+            ReplaceOptions o = new ReplaceOptions();
+            o.Replacement = "> ";
+            o.PreserveCase = false;
+            ReplacePlan plan = Replacer.Plan(fh, new Matcher("^", false, false, true), o);
+            Eq(plan.Changes[0].After, "> hello", "the preview shows the line with the prefix added");
+            Eq(plan.Changes[0].OldText, "", "and nothing being removed");
+
+            List<ReplacePlan> plans = new List<ReplacePlan>();
+            plans.Add(plan);
+            Replacer.Apply(plans, Path.Combine(dir, "undo"));
+            Eq(File.ReadAllText(path), "> hello\r\n> world\r\n",
+               "prefixing every line keeps the text it was prefixing");
         }
 
         // A write that fails must never cost the file.

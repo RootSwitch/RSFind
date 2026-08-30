@@ -52,11 +52,26 @@ $plants = @(
        want = 'a trailing newline does not add a phantom line'
        why  = 'a file ending in a newline must not grow an empty last line' },
 
+    # The two halves of the zero-width problem, which used to be one line doing
+    # both jobs badly: reporting length 1 kept the search loop safe and made
+    # every zero-width replace overwrite a real character.
     @{ file = 'Matching.cs'
-       from = 'length = m.Length > 0 ? m.Length : 1;'
-       to   = 'length = m.Length;'
+       from = 'return start + (length > 0 ? length : 1);'
+       to   = 'return start + length;'
        want = 'a zero-width regex terminates'
-       why  = 'a pattern that can match empty must not report endless hits' },
+       why  = 'a loop advancing by a zero-width match never moves' },
+
+    @{ file = 'Matching.cs'
+       from = @'
+                length = m.Length;
+                return true;
+'@
+       to   = @'
+                length = m.Length > 0 ? m.Length : 1;
+                return true;
+'@
+       want = 'a zero-width match reports length zero, not one'
+       why  = 'a widened length is the span Replacer overwrites, eating a real character' },
 
     @{ file = 'Matching.cs'
        from = 'if (!wholeWord || IsWholeWordAt(line, at, literal.Length))'

@@ -493,7 +493,7 @@ namespace RSFind
                         Interlocked.Exchange(ref truncated, 1);
                         return fh;
                     }
-                    from = start + len;
+                    from = Matcher.Advance(start, len);
                 }
             }
             return fh;

@@ -94,10 +94,18 @@ namespace RSFind
                 }
                 if (!m.Success) return false;
                 start = m.Index;
-                // A pattern that can match empty ("x*") would otherwise report
-                // an endless run of zero-width hits at one position, because
-                // the caller advances by the match length.
-                length = m.Length > 0 ? m.Length : 1;
+                // The TRUE length, zero included.
+                //
+                // This used to report 1 for a zero-width match, so that a
+                // caller advancing by the length could not spin forever on a
+                // pattern like "x*". That made the search safe and the replace
+                // wrong: Replacer takes this as the span to overwrite, so
+                // replacing "^" with "> " consumed the first real character of
+                // every line and produced "> ello" from "hello".
+                //
+                // Advancing is the caller's problem, and Advance below is how
+                // it is solved. A length is a fact about the match.
+                length = m.Length;
                 return true;
             }
 
@@ -115,6 +123,14 @@ namespace RSFind
                 i = at + 1;
             }
             return false;
+        }
+
+        // Where a scan resumes after a match. Every loop over Next must use
+        // this rather than adding the length itself: a zero-width match
+        // reports length 0, and a loop that advances by 0 never moves.
+        public static int Advance(int start, int length)
+        {
+            return start + (length > 0 ? length : 1);
         }
 
         // Expands $1 and friends against the match that starts at 'start'.
