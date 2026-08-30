@@ -299,7 +299,9 @@ namespace RSFind
             // Whoever is mid-read stays where they are, by file rather than by
             // row number: the row number means nothing after a reorder, and the
             // file they were looking at is the thing they had in mind.
+            int previousTop = TopIndex();
             FileHits anchor = TopFile();
+            List<SelectionAnchor> selection = CaptureSelection();
 
             int[] order = new int[_files.Count];
             for (int i = 0; i < order.Length; i++) order[i] = i;
@@ -325,7 +327,65 @@ namespace RSFind
             _collapsed.AddRange(sortedCollapsed);
 
             Rebuild();
-            ScrollToFile(anchor);
+            RestoreSelection(selection);
+            RestoreReadingPosition(anchor, previousTop);
+        }
+
+        // What a selection points at, in terms that survive a reorder.
+        //
+        // A row index does not: row 3 after a sort is a different line than row
+        // 3 before it, so carrying the index across would silently move the
+        // selection onto something nobody picked. Rebuild clears the selection
+        // for exactly that reason, which is right for a filter change and too
+        // blunt for a re-sort - the rows are all still there, they have moved.
+        struct SelectionAnchor
+        {
+            public FileHits File;
+            public int Hit;
+            public int Rel;
+            public bool IsHeader;
+        }
+
+        // Beyond this the selection is dropped rather than followed. Restoring
+        // is a scan of the rows per anchor, and Ctrl+A over a large result set
+        // would turn a re-sort into a visible pause. Nobody selects sixty-five
+        // rows and then re-sorts expecting to keep them.
+        const int MaxFollowedSelection = 64;
+
+        List<SelectionAnchor> CaptureSelection()
+        {
+            List<SelectionAnchor> picked = new List<SelectionAnchor>();
+            foreach (int index in SelectedIndices)
+            {
+                if (index < 0 || index >= _rows.Count) continue;
+                if (picked.Count >= MaxFollowedSelection) return new List<SelectionAnchor>();
+                Row r = _rows[index];
+                SelectionAnchor a = new SelectionAnchor();
+                a.File = _files[r.File];
+                a.Hit = r.Hit;
+                a.Rel = r.Rel;
+                a.IsHeader = r.Kind == RowKind.File;
+                picked.Add(a);
+            }
+            return picked;
+        }
+
+        void RestoreSelection(List<SelectionAnchor> picked)
+        {
+            if (picked == null || picked.Count == 0) return;
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                Row r = _rows[i];
+                for (int p = 0; p < picked.Count; p++)
+                {
+                    SelectionAnchor a = picked[p];
+                    if (!ReferenceEquals(_files[r.File], a.File)) continue;
+                    if ((r.Kind == RowKind.File) != a.IsHeader) continue;
+                    if (!a.IsHeader && (r.Hit != a.Hit || r.Rel != a.Rel)) continue;
+                    SelectedIndices.Add(i);
+                    break;
+                }
+            }
         }
 
         FileHits TopFile()
@@ -335,27 +395,38 @@ namespace RSFind
             return _files[_rows[top].File];
         }
 
-        void ScrollToFile(FileHits target)
+        // Puts the reader back where they were reading.
+        //
+        // The first branch is the one that matters most and the one the first
+        // version of this got wrong: somebody who has not scrolled is at the
+        // top and wants to stay there. Reordering does not move the scroll
+        // offset by itself, so the correct action is none at all - and the
+        // first version instead ran the anchor logic unconditionally and
+        // scrolled every finished search to the bottom of its results.
+        void RestoreReadingPosition(FileHits anchor, int previousTop)
         {
-            if (target == null || _rows.Count == 0) return;
+            if (previousTop <= 0 || anchor == null || _rows.Count == 0) return;
+
             for (int i = 0; i < _rows.Count; i++)
             {
                 if (_rows[i].Kind != RowKind.File) continue;
-                if (!ReferenceEquals(_files[_rows[i].File], target)) continue;
-
-                // EnsureVisible scrolls the minimum distance, which would leave
-                // the anchor at the bottom of the viewport as often as the top.
-                // Reaching past it first and coming back puts it at the top,
-                // which is where it was.
-                BeginUpdate();
-                try
-                {
-                    EnsureVisible(_rows.Count - 1);
-                    EnsureVisible(i);
-                }
-                finally { EndUpdate(); }
+                if (!ReferenceEquals(_files[_rows[i].File], anchor)) continue;
+                PutRowAtTop(i);
                 return;
             }
+        }
+
+        // EnsureVisible scrolls the shortest distance that makes a row visible,
+        // which lands it at whichever edge it came from. Reaching past it and
+        // coming back is what pins it to the top - but the two calls have to
+        // reach the control separately, so they are not wrapped in
+        // BeginUpdate: with redraw suspended the second one is dropped and the
+        // view is left where the first one put it, at the end of the list.
+        void PutRowAtTop(int index)
+        {
+            if (index < 0 || index >= _rows.Count) return;
+            EnsureVisible(_rows.Count - 1);
+            EnsureVisible(index);
         }
 
         // What the filter matches, and why each half is there.

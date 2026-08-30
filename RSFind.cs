@@ -34,6 +34,13 @@ namespace RSFind
         Label _replaceLabel;
         SpinBox _maxMb, _before, _after;
         Label _folderLabel, _queryLabel, _maskLabel, _excludeLabel, _mbLabel, _contextLabel, _summary;
+        Label _sortLabel;
+        ThemedDropdown _sortBy, _sortOrder;
+
+        // Same order as the ResultSort enum, so the dropdown index is the key
+        // and neither list can be reordered without the other noticing.
+        static readonly string[] SortLabels =
+            { "Name", "Modified", "Created", "Size", "Hit Count" };
         Panel _top;
         Panel _resultsHost, _filterBar;
         TextBox _filter;
@@ -116,7 +123,7 @@ namespace RSFind
             _results.Dock = DockStyle.Fill;
             _results.OpenRequested += OnOpenRequested;
             _results.FindRequested += delegate { ShowFilter(); };
-            _results.SortChanged += delegate { SaveSettings(); };
+            _results.SortChanged += OnSortChanged;
 
             BuildFilterBar();
 
@@ -208,6 +215,16 @@ namespace RSFind
             _after = new SpinBox(0, 20, 0);
             _top.Controls.Add(_before);
             _top.Controls.Add(_after);
+
+            _sortLabel = NewLabel("Sort by");
+            _sortBy = new ThemedDropdown();
+            _sortBy.SetItems(SortLabels);
+            _sortBy.SelectedIndexChanged += OnSortPicked;
+            _sortOrder = new ThemedDropdown();
+            _sortOrder.SetItems(new string[] { "Ascending", "Descending" });
+            _sortOrder.SelectedIndexChanged += OnSortPicked;
+            _top.Controls.Add(_sortBy);
+            _top.Controls.Add(_sortOrder);
 
             _summary = NewLabel("Ready.");
             _summary.AutoSize = false;
@@ -505,7 +522,24 @@ namespace RSFind
             Place(_contextLabel, cx, y, rowH);
             _before.SetBounds(cx + Dpi.S(82), y, Dpi.S(60), rowH);
             _after.SetBounds(_before.Right + Dpi.S(6), y, Dpi.S(60), rowH);
-            y += rowH + gap;
+
+            // The sort controls, on the end of the same row when there is room
+            // and on a row of their own when there is not. Row 4 already runs
+            // wider than the minimum window, so "there is room" is a real
+            // question rather than a formality.
+            int sortW = Dpi.S(104);
+            int orderW = Dpi.S(116);
+            int sortRow = y;
+            int sx = _after.Right + Dpi.S(16);
+            if (sx + _sortLabel.Width + Dpi.S(8) + sortW + Dpi.S(6) + orderW > right)
+            {
+                sortRow += rowH + gap;
+                sx = pad + labelW;
+            }
+            Place(_sortLabel, sx, sortRow, rowH);
+            _sortBy.SetBounds(sx + _sortLabel.Width + Dpi.S(8), sortRow, sortW, rowH);
+            _sortOrder.SetBounds(_sortBy.Right + Dpi.S(6), sortRow, orderW, rowH);
+            y = sortRow + rowH + gap;
 
             // Row 5: the summary line, which is the only place the caps and
             // the cancellations get to speak.
@@ -597,6 +631,28 @@ namespace RSFind
             _after.Value = _settings.ContextAfter;
             _results.SetSort(ViewRules.ParseSort(_settings.SortKey, ResultSort.Name),
                              _settings.SortDescending, false);
+            ShowSortInControls();
+        }
+
+        // The dropdowns and the results right-click menu are two ways into the
+        // same setting, so whichever one is used, the other has to follow. The
+        // menu marks itself when it opens; these have to be told.
+        void ShowSortInControls()
+        {
+            _sortBy.SetSelectedIndex((int)_results.SortKey, false);
+            _sortOrder.SetSelectedIndex(_results.SortDescending ? 1 : 0, false);
+        }
+
+        void OnSortPicked(object sender, EventArgs e)
+        {
+            _results.SetSort((ResultSort)_sortBy.SelectedIndex,
+                             _sortOrder.SelectedIndex == 1, true);
+        }
+
+        void OnSortChanged(object sender, EventArgs e)
+        {
+            ShowSortInControls();
+            SaveSettings();
         }
 
         void SaveSettings()

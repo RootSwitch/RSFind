@@ -523,6 +523,172 @@ namespace RSFind
 
     // Menu chrome. ProfessionalColorTable is the only supported way to recolor
     // ToolStrip surfaces without painting every item by hand.
+    // A dropdown that matches the rest of the chrome.
+    //
+    // Not a ComboBox. A real one paints its list from the system palette and
+    // ignores most attempts to theme it, which on the darker two thirds of the
+    // 29 palettes is a bright white hole - the same reason SpinBox hosts a
+    // borderless TextBox rather than using a NumericUpDown. This paints its own
+    // closed state and opens the ContextMenuStrip the app already themes
+    // everywhere else, so a palette cannot be added that forgets about it.
+    public class ThemedDropdown : Control
+    {
+        static int CaretW { get { return Dpi.S(20); } }
+
+        string[] _items = new string[0];
+        int _index;
+        bool _hover;
+        bool _open;
+        ContextMenuStrip _menu;
+
+        public event EventHandler SelectedIndexChanged;
+
+        public ThemedDropdown()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            TabStop = true;
+            Th.Changed += OnThemeChanged;
+        }
+
+        void OnThemeChanged(object sender, EventArgs e) { Invalidate(); }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Th.Changed -= OnThemeChanged;
+                if (_menu != null) _menu.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        public void SetItems(string[] items)
+        {
+            _items = items == null ? new string[0] : items;
+            if (_index >= _items.Length) _index = 0;
+            Invalidate();
+        }
+
+        public int SelectedIndex
+        {
+            get { return _index; }
+            set { SetSelectedIndex(value, true); }
+        }
+
+        public string SelectedItem
+        {
+            get { return _index >= 0 && _index < _items.Length ? _items[_index] : ""; }
+        }
+
+        // notify:false exists for loading saved settings, where raising the
+        // event would write the file back out during the read that produced it.
+        public void SetSelectedIndex(int index, bool notify)
+        {
+            if (index < 0 || index >= _items.Length || index == _index) return;
+            _index = index;
+            Invalidate();
+            if (notify && SelectedIndexChanged != null)
+                SelectedIndexChanged(this, EventArgs.Empty);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            base.OnMouseEnter(e); _hover = true; Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e); _hover = false; Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left) { Focus(); Open(); }
+        }
+
+        // Without this the arrow keys are eaten as navigation and never reach
+        // OnKeyDown, so a focused dropdown moves focus instead of changing.
+        protected override bool IsInputKey(Keys keyData)
+        {
+            if (keyData == Keys.Up || keyData == Keys.Down) return true;
+            return base.IsInputKey(keyData);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Down) { SetSelectedIndex(_index + 1, true); e.Handled = true; }
+            else if (e.KeyCode == Keys.Up) { SetSelectedIndex(_index - 1, true); e.Handled = true; }
+            else if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter) { Open(); e.Handled = true; }
+        }
+
+        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+        protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
+
+        void Open()
+        {
+            if (_items.Length == 0) return;
+            if (_menu == null)
+            {
+                _menu = new ContextMenuStrip();
+                _menu.Renderer = new ToolStripProfessionalRenderer(new ThemeColorTable());
+                _menu.ShowImageMargin = false;
+                _menu.Closed += delegate { _open = false; Invalidate(); };
+            }
+
+            // Rebuilt per open rather than kept, so the check mark cannot drift
+            // from the selection and one menu object is reused either way.
+            _menu.Items.Clear();
+            for (int i = 0; i < _items.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(_items[i]);
+                int pick = i;
+                item.Checked = i == _index;
+                item.Click += delegate { SetSelectedIndex(pick, true); };
+                _menu.Items.Add(item);
+            }
+
+            MenuTheme.Apply(_menu);
+            _open = true;
+            Invalidate();
+            _menu.Show(this, new Point(0, Height));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Theme t = Th.T;
+            Color back = Parent != null ? Parent.BackColor : t.Panel;
+            e.Graphics.SmoothingMode = SmoothingMode.None;   // see the note in InputHost.OnPaint
+            using (SolidBrush bg = new SolidBrush(back))
+                e.Graphics.FillRectangle(bg, ClientRectangle);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color border = (Focused || _open) ? t.Accent
+                         : _hover ? Th.Mix(t.Border, t.Accent, 0.5)
+                         : t.Border;
+            Draw.FillBorderRound(e.Graphics, ClientRectangle, 4, t.Input, border);
+
+            Rectangle text = new Rectangle(Dpi.S(7), 0,
+                                           Math.Max(0, Width - CaretW - Dpi.S(8)), Height);
+            TextRenderer.DrawText(e.Graphics, SelectedItem, Font, text, t.Txt,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+
+            int cx = Width - CaretW / 2 - Dpi.S(3);
+            int cy = Height / 2;
+            int w = Dpi.S(4);
+            Point[] caret = {
+                new Point(cx - w, cy - w / 2),
+                new Point(cx + w, cy - w / 2),
+                new Point(cx, cy + w)
+            };
+            using (SolidBrush b = new SolidBrush(_hover || _open ? t.Accent : t.TxtDim))
+                e.Graphics.FillPolygon(b, caret);
+        }
+    }
+
     public class ThemeColorTable : ProfessionalColorTable
     {
         public ThemeColorTable() { UseSystemColors = false; }

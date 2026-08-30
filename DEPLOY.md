@@ -181,7 +181,7 @@ a slow share will feel slow.
 tools\Run-Tests.cmd
 ```
 
-Builds and runs 319 engine checks with the same in-box compiler, then 11 checks
+Builds and runs 319 engine checks with the same in-box compiler, then 21 checks
 that need a real window, then the house style check. To confirm the checks can
 still fail after a refactor:
 

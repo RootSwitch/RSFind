@@ -234,9 +234,10 @@ is in the name rather than in any of the matched lines. A filter matching a
 **line** keeps that hit on its own.
 
 **Files are listed in a defined order**, by filename unless you say otherwise.
-**Right-click > Sort by** offers Modified, Created, Size, and Hit Count as well,
-with a Descending toggle for "newest first" and its relatives. The choice is
-remembered.
+The **Sort by** and **Ascending / Descending** dropdowns at the end of the
+options row offer Modified, Created, Size, and Hit Count as well; the same
+choices live under **right-click > Sort by** on the results. Either one follows
+the other, and the choice is remembered.
 
 Hit Count is the one worth knowing about: it answers "which of these files
 actually discusses this" rather than "which of them mentions it once".
@@ -248,7 +249,10 @@ day it landed on your disk, routinely *newer* than the date it was written.
 Modified is almost always the one that answers the question.
 
 The order is applied when a scan finishes rather than while results stream in,
-so rows do not rearrange themselves under you while you are reading them.
+so rows do not rearrange themselves under you while you are reading them. If you
+had scrolled, the file you were reading stays at the top; if you had not, the
+list stays at the top. A selected line stays selected and moves to wherever it
+now lives.
 
 **Each file's header shows its modified date and size**, held against the right
 edge rather than trailing the filename, so they line up into a column you can

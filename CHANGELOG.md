@@ -86,7 +86,42 @@ which stays in KB against a `>= 1024` promotion test and then rounds to one
 decimal for display - a unit it had just been decided not to be in. The test is
 against the number that gets printed.
 
-319 engine checks, 11 window checks, 44 planted defects.
+**Sort by and Ascending / Descending dropdowns**, at the end of the options row
+beside Context lines, wrapping to a row of their own when the window is too
+narrow to hold them there. The results right-click menu keeps the same choices;
+either one follows the other.
+
+They are not ComboBoxes. A real one paints its list from the system palette and
+ignores most attempts to theme it, which on the darker two thirds of the 29
+palettes is a bright white hole - the same reason SpinBox hosts a borderless
+TextBox rather than a NumericUpDown. `ThemedDropdown` paints its own closed
+state and opens the ContextMenuStrip everything else in the app already themes,
+so a palette cannot be added that forgets about it.
+
+**Fixed: finishing a search scrolled to the bottom of its own results.**
+Reported immediately after the sort landed, and caused by it. Two mistakes in
+one small method. Restoring the reader's position ran unconditionally, when
+somebody who has not scrolled is at the top and reordering does not move the
+scroll offset - so the correct action there is none at all. And the two calls
+that pin a row to the top were wrapped in `BeginUpdate`, with the result that
+the second one was dropped and the view stayed where the first had put it, at
+the end of the list. Both halves confirmed by a test that reads the scroll
+offset back out of the control.
+
+**A selected line survives a re-sort now, by moving with its line.** Rebuild
+clears the selection, which is right when a filter changes - the rows those
+indices pointed at may not exist any more - and too blunt for a sort, where they
+all still exist and have simply moved. The scroll position and every collapse
+state were being carefully preserved around a selection that was quietly
+dropped. Found by driving the pane through every key and direction rather than
+by anything failing.
+
+That exercise also confirmed what does hold across a re-sort: file count, total
+hits, row count, an active Ctrl+F filter and its visible count, and every
+collapse flag. Sorting an empty pane and sorting a single file both do nothing,
+rather than throwing.
+
+319 engine checks, 21 window checks, 44 planted defects.
 
 ## 1.0.0 - 2026-08-30
 

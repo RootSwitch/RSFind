@@ -33,6 +33,8 @@ namespace RSFind
             {
                 SelectionPaintTests();
                 SortKeepsCollapseWithItsFile();
+                SortScrollTests();
+                SortKeepsTheSelection();
                 Console.WriteLine("PASS  " + checks + " view checks");
                 return 0;
             }
@@ -172,6 +174,132 @@ namespace RSFind
 
             f.Close();
             f.Dispose();
+        }
+
+        // Where sorting leaves the viewport.
+        //
+        // Reported from use: after this feature landed, running a search
+        // scrolled the pane to the bottom as the results drew, where it used
+        // to stay at the top. Sorting happens when the scan finishes, so
+        // "as they drew" and "when it finished" are the same moment for a
+        // 35 ms search.
+        //
+        // Two rules, and they pull in opposite directions, which is what makes
+        // this worth testing rather than eyeballing. Someone who has not
+        // scrolled is at the top and expects to stay there. Someone who has
+        // scrolled is reading a particular file and expects to keep it.
+        static void SortScrollTests()
+        {
+            Dpi.Init();
+            Th.Set("classic");
+
+            Form f = new Form();
+            f.ClientSize = new Size(700, 260);
+            ResultsView view = new ResultsView();
+            view.Dock = DockStyle.Fill;
+            f.Controls.Add(view);
+            f.Show();
+            Pump();
+
+            // Six files of five hits each, so every header lands on a row
+            // index the test can work out: file n is at row n * 6. Sizes run
+            // opposite to the names, so sorting by size reverses the order and
+            // a file genuinely moves.
+            List<FileHits> files = new List<FileHits>();
+            for (int i = 0; i < 6; i++)
+                files.Add(One("file" + i + ".log", 5, 1000 - i * 100));
+            view.AddFiles(files);
+            view.ApplySort();
+            Pump();
+
+            Eq(view.VirtualListSize, 36, "six headers and thirty hits");
+
+            // Nobody has scrolled. Sorting must not move the view.
+            Eq(TopIndex(view), 0, "a freshly filled list starts at the top");
+            view.SetSort(ResultSort.Size, false, false);
+            Pump();
+            Eq(TopIndex(view), 0, "sorting a list nobody has scrolled leaves it at the top");
+
+            view.SetSort(ResultSort.Name, false, false);
+            Pump();
+            Eq(TopIndex(view), 0, "and again on the way back");
+
+            // Now someone scrolls to file3's header and reads it.
+            view.EnsureVisible(35);
+            view.EnsureVisible(18);
+            Pump();
+            Eq(TopIndex(view), 18, "the reader is parked on file3's header");
+
+            // Smallest first reverses the order, so file3 becomes the third
+            // from the end - position 2 - and its header moves to row 12. The
+            // reader should still be looking at it.
+            view.SetSort(ResultSort.Size, false, false);
+            Pump();
+            Eq(TopIndex(view), 12, "the file the reader was on is still at the top after a re-sort");
+
+            f.Close();
+            f.Dispose();
+        }
+
+        // A selected line has to survive a re-sort, and survive it by moving.
+        //
+        // Rebuild clears the selection, which is right when a filter changes -
+        // the rows the indices pointed at may not exist any more. For a sort
+        // they all still exist and have simply moved, so clearing loses the
+        // line somebody deliberately picked while the scroll position and the
+        // collapse states are both carefully preserved around it. Asserted on
+        // the selected *text* rather than the row number, because the row
+        // number is exactly the thing that is allowed to change.
+        static void SortKeepsTheSelection()
+        {
+            Dpi.Init();
+            Th.Set("classic");
+
+            Form f = new Form();
+            f.ClientSize = new Size(700, 300);
+            ResultsView view = new ResultsView();
+            view.Dock = DockStyle.Fill;
+            f.Controls.Add(view);
+            f.Show();
+            Pump();
+
+            List<FileHits> files = new List<FileHits>();
+            files.Add(One("alpha.log", 4, 900));
+            files.Add(One("bravo.log", 4, 500));
+            files.Add(One("charlie.log", 4, 100));
+            view.AddFiles(files);
+            view.SetSort(ResultSort.Name, false, false);
+            Pump();
+
+            view.SelectedIndices.Clear();
+            view.SelectedIndices.Add(3);          // a hit line inside alpha.log
+            Pump();
+            string picked = view.SelectionAsText();
+            Ok(picked.Length > 0, "something is selected to begin with");
+
+            // Smallest first puts alpha last, so its rows genuinely move.
+            view.SetSort(ResultSort.Size, false, false);
+            Pump();
+
+            Eq(view.SelectedIndices.Count, 1, "still exactly one row selected after a re-sort");
+            Ok(view.SelectedIndices[0] != 3, "and it is not at the row it started on");
+            Eq(view.SelectionAsText(), picked, "the selection is still on the same line");
+
+            f.Close();
+            f.Dispose();
+        }
+
+        static void Eq(string actual, string expected, string what)
+        {
+            checks++;
+            if (actual != expected)
+                throw new Exception(what + ": expected [" + expected + "] got [" + actual + "]");
+        }
+
+        static int TopIndex(ResultsView view)
+        {
+            return (int)Native.SendMessage(view.Handle, Native.LVM_GETTOPINDEX,
+                                           IntPtr.Zero, IntPtr.Zero);
         }
 
         // The handler is invoked directly rather than by posting a real
