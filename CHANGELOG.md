@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-08-30
 
 **`tools\Make-Dist.ps1` builds the release zip**, rebuilding the exe first
 rather than packaging whatever binary is lying in the folder. A distribution
