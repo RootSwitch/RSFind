@@ -263,6 +263,23 @@ $plants = @(
        why  = 'filtering by host must keep the whole file, since the host is only in its name' },
 
     @{ file = 'ViewRules.cs'
+       from = 'for (int i = 0; i < AlwaysExecutable.Length; i++)'
+       to   = 'for (int i = 0; i < 0; i++)'
+       want = '.ps1 is refused even though PATHEXT does not list it'
+       why  = 'PATHEXT alone misses .ps1, .lnk, .scr and the rest of the dangerous list' },
+
+    @{ file = 'ViewRules.cs'
+       from = @'
+            string[] parts = pathExt.Split(new char[] { ';' },
+                                           StringSplitOptions.RemoveEmptyEntries);
+'@
+       to   = @'
+            string[] parts = new string[0];
+'@
+       want = 'an extension this machine added to PATHEXT is refused'
+       why  = 'a machine that made .py executable must not have it launched either' },
+
+    @{ file = 'ViewRules.cs'
        from = 'return Contains(lineText, filter) || Contains(location, filter);'
        to   = 'return Contains(lineText, filter);'
        want = 'a hit matching its location label is kept'

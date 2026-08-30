@@ -1013,6 +1013,24 @@ namespace RSFind
             {
                 if (string.IsNullOrEmpty(command) || e.ShellOnly)
                 {
+                    // The shell would RUN this, not open it.
+                    //
+                    // Refused rather than confirmed, because a confirmation on
+                    // a double-click is a thing people dismiss. The message
+                    // names both ways forward: an editor command opens the file
+                    // safely - handing a path to a text editor does not execute
+                    // it - and Open Containing Folder was already the safe
+                    // route for anything else.
+                    if (ViewRules.IsExecutable(e.Path,
+                            Environment.GetEnvironmentVariable("PATHEXT")))
+                    {
+                        SetSummary("RSFind will not launch "
+                            + Path.GetFileName(e.Path)
+                            + " - Windows would run it rather than open it. Set an editor "
+                            + "command in the menu to read it, or use Open Containing Folder.",
+                            true);
+                        return;
+                    }
                     Process.Start(e.Path);   // whatever the shell associates
                     return;
                 }

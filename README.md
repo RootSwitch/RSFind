@@ -216,6 +216,18 @@ and `{line}` as placeholders:
 notepad++ {file} -n{line}
 ```
 
+**RSFind will not launch an executable.** With no editor command set, opening a
+hit hands the path to Windows, which runs a `.exe`, `.bat`, `.ps1`, `.js`,
+`.lnk`, `.reg` and the rest rather than opening them - and those turn up in
+results as soon as you blank the file mask or uncheck **Exclude binary files**
+to search inside an image. Those are refused with a line saying so. The machine's
+own `PATHEXT` is honored too, so an extension your box treats as executable is
+refused even if it is not on the built-in list.
+
+An editor command sidesteps this entirely: handing a path to a text editor does
+not execute it, so with one set you can open anything. **Open Containing
+Folder** on the right-click menu is the other way round it.
+
 ## What it deliberately does not do
 
 - **No index and no background service.** Nothing runs when the window is

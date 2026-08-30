@@ -54,6 +54,7 @@ namespace RSFind
                 DocumentTests();
                 ScrollTests();
                 FilterTests();
+                LaunchTests();
                 CaseTests();
                 EngineTests_EndToEnd(root);
                 OfficeEndToEnd(root);
@@ -765,6 +766,46 @@ namespace RSFind
             Ok(ViewRules.FileKeepsEverything("170524", Log), "filtering by the session timestamp works");
 
             Ok(!ViewRules.HitIsShown("LAB4", Other, null, null), "a null line does not match");
+        }
+
+        // ---- what the open path refuses to launch --------------------------
+
+        static void LaunchTests()
+        {
+            const string Default = ".COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSF;.MSC";
+
+            // The ordinary case, and the one that must keep working: a log
+            // opens with whatever Windows associates.
+            Ok(!ViewRules.IsExecutable("session.log", Default), "a log is not executable");
+            Ok(!ViewRules.IsExecutable("notes.md", Default), "a document is not executable");
+            Ok(!ViewRules.IsExecutable("plan.xlsx", Default), "a workbook is not executable");
+            Ok(!ViewRules.IsExecutable("Makefile", Default),
+               "a file with no extension is not executable");
+
+            // The reason this exists. Unchecking Exclude binary files to search
+            // a firmware image puts these in the results like anything else.
+            Ok(ViewRules.IsExecutable("tool.exe", Default), ".exe is refused");
+            Ok(ViewRules.IsExecutable("setup.BAT", Default), "the test is case-insensitive");
+            Ok(ViewRules.IsExecutable("deploy.ps1", Default),
+               ".ps1 is refused even though PATHEXT does not list it");
+            Ok(ViewRules.IsExecutable("saver.scr", Default),
+               ".scr is a program wearing another name");
+            Ok(ViewRules.IsExecutable("shortcut.lnk", Default),
+               ".lnk is refused because it runs whatever it points at");
+            Ok(ViewRules.IsExecutable("merge.reg", Default),
+               ".reg is refused because opening it writes to the registry");
+            Ok(ViewRules.IsExecutable("script.js", Default),
+               ".js is refused - double-clicking one runs it under Windows Script Host");
+
+            // PATHEXT covers what this particular machine calls executable.
+            Ok(ViewRules.IsExecutable("build.py", ".COM;.EXE;.PY"),
+               "an extension this machine added to PATHEXT is refused");
+            Ok(!ViewRules.IsExecutable("build.py", Default),
+               "and is allowed where the machine has not");
+            Ok(ViewRules.IsExecutable("run.rb", "EXE;RB"),
+               "PATHEXT entries without a leading dot are understood");
+            Ok(!ViewRules.IsExecutable("session.log", null),
+               "a missing PATHEXT is not an error");
         }
 
         // ---- case preservation -------------------------------------------------

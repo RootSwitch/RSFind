@@ -41,6 +41,59 @@ namespace RSFind
             return Contains(lineText, filter) || Contains(location, filter);
         }
 
+        // Extensions the shell RUNS rather than opens, so RSFind will not hand
+        // them to it.
+        //
+        // Opening a hit with no editor command configured calls Process.Start
+        // on the path, which uses the file's association - normally a text
+        // editor, because normally the file is a log. But the file mask can be
+        // blank and Exclude binary files can be unchecked, which the README
+        // describes as the way to find a string inside a firmware image. An
+        // .exe, .bat, .ps1, or .lnk holding the search string as ASCII appears
+        // in the results like anything else, and double-clicking it used to run
+        // it.
+        //
+        // The replace path already refuses binaries "regardless of what the
+        // search options said". The open path had not been given the same
+        // reasoning, which is the whole of this rule.
+        //
+        // Two lists, deliberately. The built-in one covers what is dangerous on
+        // any Windows machine; PATHEXT covers what this particular machine has
+        // decided is executable, which is the only way to catch a box where
+        // .py or .rb has been added to it.
+        static readonly string[] AlwaysExecutable = {
+            ".exe", ".com", ".bat", ".cmd", ".scr", ".pif", ".cpl", ".msc",
+            ".msi", ".msp", ".hta", ".jar", ".gadget", ".application",
+            ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".ps1", ".psm1",
+            ".lnk", ".url", ".scf", ".reg"
+        };
+
+        public static bool IsExecutable(string path, string pathExt)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+
+            string ext;
+            try { ext = System.IO.Path.GetExtension(path); }
+            catch (ArgumentException) { return true; }   // unreadable name, do not launch it
+            if (string.IsNullOrEmpty(ext)) return false;
+            ext = ext.ToLowerInvariant();
+
+            for (int i = 0; i < AlwaysExecutable.Length; i++)
+                if (ext == AlwaysExecutable[i]) return true;
+
+            if (string.IsNullOrEmpty(pathExt)) return false;
+            string[] parts = pathExt.Split(new char[] { ';' },
+                                           StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string p = parts[i].Trim().ToLowerInvariant();
+                if (p.Length == 0) continue;
+                if (p[0] != '.') p = "." + p;
+                if (ext == p) return true;
+            }
+            return false;
+        }
+
         // True when a list's scroll position is about to be left pointing past
         // the end of its data.
         //

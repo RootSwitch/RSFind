@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**Double-clicking a result no longer shell-executes it.** With no editor command
+set, opening a hit called `Process.Start` on the path, which uses the file's
+association - normally a text editor, because normally the file is a log. But
+blank the file mask and uncheck **Exclude binary files**, which the README
+describes as the way to find a string inside a firmware image, and a `.exe`,
+`.bat`, `.ps1`, `.js`, `.lnk` or `.reg` containing the search string as ASCII
+appears in the results like anything else. Double-clicking it ran it.
+
+The replace path already refused binaries "regardless of what the search options
+said". The open path had not been given the same reasoning; now it has.
+
+The rule consults two lists: a built-in one for what is dangerous on any Windows
+machine, and the machine's own `PATHEXT` for what this box has decided is
+executable - the only way to catch one where `.py` has been added to it. It is a
+refusal rather than a confirmation, because a prompt on a double-click is a
+thing people dismiss, and the message names both ways forward: an editor command
+opens the file safely, since handing a path to a text editor does not execute
+it, and Open Containing Folder was already there for anything else.
+
+Verified end to end with a `.cmd` that would have written a file had it run.
+
 **A zero-width regex replace overwrote a character instead of inserting one.**
 Replacing `^` with `> ` across a file produced `> ello` from `hello` - every
 line prefixed and its first character eaten.
