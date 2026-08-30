@@ -31,6 +31,35 @@ for them are unhelpful - the compiler reports a syntax error at the character
 rather than saying the feature is too new. If a build fails on a line that
 looks obviously correct, check it against C# 5 before checking anything else.
 
+## Running without building
+
+```bash
+Run-From-Source.cmd
+```
+
+`Run-From-Source.ps1` compiles the `.cs` files in memory with `Add-Type` and
+calls `MainForm.Run`. Same app, no executable anywhere. It takes an optional
+folder, and relaunches itself STA if the host is not, because WinForms requires
+it.
+
+Measured on this project: **1.6 s to a window and 96 MB, against 0.4 s and
+37 MB for the exe**, because it compiles on every launch. The exe is what to use
+day to day; this is for a machine that will not run an unsigned binary, or for
+handing the tool to someone who would rather read the source than trust a
+stranger's build.
+
+Two things to know:
+
+- **The source list is duplicated** between `Build-RSFind.cmd` and
+  `Run-From-Source.ps1`. If one gains a file and the other does not, the script
+  is the half that fails - with a missing-type error rather than by silently
+  building something different. Keep them in step.
+- **The Explorer entry is refused from this path**, deliberately. It records
+  `Application.ExecutablePath` as the program to launch, which under a
+  PowerShell host is `powershell.exe`: a right-click item that opens a console
+  window, under a registry key named RSFind. Refusing and saying so beats
+  writing an entry that lies about what it starts.
+
 ## Install
 
 There is nothing to install. Copy `RSFind.exe` wherever you keep tools; it

@@ -50,6 +50,30 @@ that folder. The same menu item removes it again.
 
 You can also pass a folder on the command line: `RSFind.exe C:\logs`.
 
+### Running without building
+
+```bash
+Run-From-Source.cmd
+```
+
+Compiles the sources in memory and runs the same app with no executable
+involved. It takes a folder too: `Run-From-Source.cmd C:\logs`.
+
+This exists because an executable is a thing people have to decide to trust.
+A freshly built, unsigned binary has no reputation, and machines configured to
+be careful about that are being sensible. Handing someone a folder of `.cs`
+files they can read costs nothing extra here, because the compiler is already
+on their machine.
+
+It is slower and heavier - measured on this project, about **1.6 s to a window
+against 0.4 s, and 96 MB against 37 MB**, because it compiles on every launch.
+Use the exe day to day.
+
+**The Explorer entry needs the exe.** That entry records which program to
+launch, and from the source path that would be PowerShell - a right-click item
+that opens a console window under a registry key named RSFind. RSFind refuses
+to write it rather than writing it wrong, and says so.
+
 ## Options
 
 | Option | What it does |

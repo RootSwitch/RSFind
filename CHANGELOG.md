@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+**`Run-From-Source.cmd`, matching RSPaster.** Compiles the sources in memory
+with `Add-Type` and runs the same app with no executable involved. It exists
+because an executable is a thing people have to decide to trust: a freshly
+built, unsigned binary has no reputation, and a machine configured to be careful
+about that is being sensible. Handing someone readable `.cs` files costs nothing
+extra, because the compiler is already on their machine.
+
+Measured: 1.6 s to a window and 96 MB, against 0.4 s and 37 MB for the exe,
+because it compiles on every launch. The exe stays the day-to-day path.
+
+**Startup is now `MainForm.Run(folder)`**, with `Main` as a thin argument
+parser over it, so there is one startup sequence rather than a second one living
+in a script.
+
+**The Explorer entry is refused when running from source.** It records
+`Application.ExecutablePath` as the program to launch, which under a PowerShell
+host is `powershell.exe` - a right-click item that opens a console window, under
+a registry key named RSFind. It refuses and says which way forward, rather than
+writing an entry that lies about what it starts.
+
 **Documented what the preview shows when several matches land on one line.**
 Each row renders that one change against the original line, so no single row
 shows the line as it will finally read - the write applies all the selected ones

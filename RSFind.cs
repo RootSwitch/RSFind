@@ -1161,6 +1161,21 @@ namespace RSFind
 
         void OnToggleExplorerEntry(object sender, EventArgs e)
         {
+            // Refused from the source path rather than written wrong.
+            //
+            // The handler recorded is Application.ExecutablePath, which here is
+            // powershell.exe. The entry would open a PowerShell window instead
+            // of RSFind, under a registry key named RSFind. A menu item that
+            // does nothing useful is better than one that lies about what it
+            // launches.
+            if (RunningFromSource)
+            {
+                SetSummary("The Explorer entry needs RSFind.exe - it records the program "
+                    + "to launch, and running from source that would be PowerShell. "
+                    + "Run Build-RSFind.cmd, then add it from there.", true);
+                return;
+            }
+
             try
             {
                 if (ExplorerEntryPresent())
@@ -1199,8 +1214,18 @@ namespace RSFind
 
         // ---- entry point -------------------------------------------------------------
 
-        [STAThread]
-        public static void Main(string[] argv)
+        // Set by Run-From-Source.ps1 before it calls Run.
+        //
+        // The one thing that genuinely differs on that path is the Explorer
+        // entry: it records Application.ExecutablePath as the handler, which
+        // under a PowerShell host is powershell.exe. Writing that into the
+        // registry would produce a right-click item that opens a PowerShell
+        // window instead of RSFind, under a key named RSFind - wrong, and
+        // alarming to anyone who later reads their own hive.
+        public static bool RunningFromSource;
+
+        // The whole of startup, callable without an exe.
+        public static void Run(string folder)
         {
             // DPI awareness and the layout scale ship together: awareness alone
             // renders a fixed-pixel layout tiny at 150%, which is worse than the
@@ -1209,10 +1234,19 @@ namespace RSFind
             catch (EntryPointNotFoundException) { }
             Dpi.Init();
             Application.EnableVisualStyles();
+            // Throws if a control already exists, which is the normal state
+            // inside a PowerShell host.
             try { Application.SetCompatibleTextRenderingDefault(false); }
             catch (InvalidOperationException) { }
             OsChrome.EnableDarkModeSupport();   // must precede the first window
 
+            if (!string.IsNullOrEmpty(folder) && !Directory.Exists(folder)) folder = null;
+            Application.Run(new MainForm(folder));
+        }
+
+        [STAThread]
+        public static void Main(string[] argv)
+        {
             string folder = null;
             if (argv != null && argv.Length > 0)
             {
@@ -1221,9 +1255,8 @@ namespace RSFind
                 // quote escaped onto the end, which is a Windows habit rather
                 // than a mistake the user made.
                 folder = argv[0].Trim().TrimEnd('"');
-                if (!Directory.Exists(folder)) folder = null;
             }
-            Application.Run(new MainForm(folder));
+            Run(folder);
         }
     }
 
